@@ -1,9 +1,9 @@
-__pycache__/
-!examples/*.html
-.DS_Store
 .venv/
-*.html
+__pycache__/
 *.pyc
+.DS_Store
 models/
-reports/
 .models-dir
+reports/
+*.html
+!examples/*.html

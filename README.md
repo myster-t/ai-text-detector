@@ -51,6 +51,7 @@ The installer checks free space at the models location before downloading. To pu
 ./uninstall.sh --profile latest     # just that profile's models (shared models are kept)
 ./uninstall.sh --all-models         # every model
 ./uninstall.sh --all                # models and the Python environment
+./uninstall.sh --profile latest --dry-run   # preview what a removal would free
 ```
 
 Nothing is installed outside the checkout except uv itself (in `~/.local/bin`), which other tools may use; remove it with

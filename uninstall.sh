@@ -28,16 +28,32 @@ if [[ $ALLM -eq 1 ]]; then rm -rf "$MODELS_DIR"; echo "removed $MODELS_DIR"
 elif [[ -n "$PROFILE" ]]; then
   [[ -x .venv/bin/python ]] || { echo "needs .venv to remove a single profile cleanly; use --all-models instead" >&2; exit 1; }
   PROFILE="$PROFILE" HF_HOME="$MODELS_DIR" DRY="$DRY" .venv/bin/python - <<'PY'
-import os, json
-from huggingface_hub import scan_cache_dir
-profiles = json.load(open("profiles.json")); name = os.environ["PROFILE"]
+import os, json, pathlib, shutil
+profiles = json.load(open("profiles.json")); name = os.environ["PROFILE"]; hub = pathlib.Path(os.environ["HF_HOME"]) / "hub"
 def repos(p): return {p["observer"], p["performer"], *[m for m, _ in p["perplexity_models"]]}
-mine = repos(profiles[name]); others = set().union(*(repos(p) for n, p in profiles.items() if n != name))
+mine = repos(profiles[name]); others = set().union(*(repos(p) for n, p in profiles.items() if n != name)) if len(profiles) > 1 else set()
 victims = mine - others; kept = mine & others
-info = scan_cache_dir(os.environ["HF_HOME"]); hashes = [r.commit_hash for repo in info.repos if repo.repo_id in victims for r in repo.revisions]
-strategy = info.delete_revisions(*hashes)
-if os.environ.get("DRY") == "1": print(f"would remove {', '.join(sorted(victims)) or 'nothing'} ({strategy.expected_freed_size_str})")
-else: strategy.execute(); print(f"removed {', '.join(sorted(victims)) or 'nothing'} ({strategy.expected_freed_size_str} freed)")
+def repo_dir(r): return hub / ("models--" + r.replace("/", "--"))
+def blobs_of(r):  # real files behind a repo's snapshot symlinks (new shared-blob layout) plus its own blobs folder
+    out = set()
+    for f in repo_dir(r).rglob("*"):
+        if f.is_file() or f.is_symlink():
+            t = f.resolve()
+            if t.exists(): out.add(t)
+    return out
+keep_blobs = set().union(*(blobs_of(r) for r in others if repo_dir(r).exists())) if others else set()
+to_delete = set()
+for r in victims:
+    if repo_dir(r).exists(): to_delete |= blobs_of(r) - keep_blobs
+size = sum(f.stat().st_size for f in to_delete if f.is_file())
+gb = size / 1e9
+if os.environ.get("DRY") == "1": print(f"would remove {', '.join(sorted(victims)) or 'nothing'} ({gb:.1f} GB)")
+else:
+    for f in to_delete:
+        if f.is_file(): f.unlink()
+    for r in victims:
+        if repo_dir(r).exists(): shutil.rmtree(repo_dir(r))
+    print(f"removed {', '.join(sorted(victims)) or 'nothing'} ({gb:.1f} GB freed)")
 if kept: print(f"kept {', '.join(sorted(kept))}: also used by another profile")
 PY
 fi
