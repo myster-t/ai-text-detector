@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+reports/
+*.html
+!examples/*.html
+.DS_Store
