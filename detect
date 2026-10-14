@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# One-word runner. Usage: ./detect file1.txt [file2.txt ...] [--out DIR]   |   ./detect --selftest
+# Uses the models in ./models and never touches the network.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+[[ -x "$ROOT/.venv/bin/python" ]] || { echo "Not installed yet. Run ./install.sh first." >&2; exit 1; }
+export HF_HOME="$ROOT/models" HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
+exec "$ROOT/.venv/bin/python" "$ROOT/report.py" "$@"

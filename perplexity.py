@@ -1,7 +1,11 @@
 """Perplexity + burstiness (GPTZero-style) for a set of text files.
 Usage: python perplexity.py MODEL file1 file2 ...   (MODEL e.g. gpt2 or Qwen/Qwen2.5-1.5B)
 Reports: document perplexity, mean per-sentence perplexity, burstiness (std of sentence ppl)."""
-import sys, re, math, json, torch
+import os, sys, re, math, json, pathlib
+HERE = pathlib.Path(__file__).resolve().parent
+if (HERE / 'models').is_dir(): os.environ.setdefault('HF_HOME', str(HERE / 'models'))
+os.environ.setdefault('HF_HUB_OFFLINE', '1'); os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
+import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 model_id, files = sys.argv[1], sys.argv[2:]
 dev = "mps" if torch.backends.mps.is_available() else "cpu"

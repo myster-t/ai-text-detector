@@ -1,7 +1,11 @@
 """Binoculars (Hans et al. 2024) zero-shot detector, reference pairing: observer tiiuae/falcon-7b, performer tiiuae/falcon-7b-instruct.
 Score = PPL_performer(text) / cross-PPL(observer -> performer). LOWER = more likely AI.
 Reference thresholds: 0.9015 (accuracy-optimal), 0.8536 (low false-positive).  Usage: python binoculars.py file1 file2 ..."""
-import sys, json, torch, torch.nn.functional as F
+import os, sys, json, pathlib
+HERE = pathlib.Path(__file__).resolve().parent
+if (HERE / 'models').is_dir(): os.environ.setdefault('HF_HOME', str(HERE / 'models'))
+os.environ.setdefault('HF_HUB_OFFLINE', '1'); os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
+import torch, torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
 OBS, PERF = "tiiuae/falcon-7b", "tiiuae/falcon-7b-instruct"
 T_ACC, T_FPR = 0.9015310749276843, 0.8536432310785527
