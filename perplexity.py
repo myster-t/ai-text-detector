@@ -3,7 +3,8 @@ Usage: python perplexity.py MODEL file1 file2 ...   (MODEL e.g. gpt2 or Qwen/Qwe
 Reports: document perplexity, mean per-sentence perplexity, burstiness (std of sentence ppl)."""
 import os, sys, re, math, json, pathlib
 HERE = pathlib.Path(__file__).resolve().parent
-if (HERE / 'models').is_dir(): os.environ.setdefault('HF_HOME', str(HERE / 'models'))
+_md = os.environ.get("AITD_MODELS_DIR") or ((HERE / ".models-dir").read_text().strip() if (HERE / ".models-dir").is_file() else "") or str(HERE / "models")
+if pathlib.Path(_md).is_dir(): os.environ.setdefault("HF_HOME", _md)
 os.environ.setdefault('HF_HUB_OFFLINE', '1'); os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM

@@ -1,0 +1,11 @@
+Great question! The reason the sky is blue comes down to how sunlight interacts with the gases in our atmosphere.
+
+Sunlight looks white, but it is actually made up of all the colors of the rainbow mixed together. Each color travels as a wave with a different wavelength. Red and orange light have long wavelengths, while blue and violet light have short wavelengths.
+
+When sunlight enters the atmosphere, it bumps into tiny molecules of nitrogen and oxygen. These molecules are much smaller than the wavelength of visible light, and they scatter short wavelengths far more strongly than long ones. This effect is called Rayleigh scattering, named after the physicist who first described it. Blue light gets scattered in every direction across the sky, so no matter where you look, some of that scattered blue light reaches your eyes.
+
+You might wonder why the sky is not violet, since violet has an even shorter wavelength than blue. There are two reasons. First, the sun emits less violet light than blue light to begin with. Second, our eyes are more sensitive to blue than to violet, so the blue dominates what we perceive.
+
+At sunrise and sunset, sunlight has to travel through much more atmosphere to reach you. By the time it arrives, most of the blue has been scattered away, leaving the longer red and orange wavelengths. That is why sunsets glow warm colors while the midday sky stays blue.
+
+So in short: the sky is blue because air scatters blue light more than any other color, and our eyes are tuned to notice it.

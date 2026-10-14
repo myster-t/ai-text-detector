@@ -1,0 +1,14 @@
+Hi Jordan,
+
+Thanks for sending over the revised proposal yesterday. I have read through it carefully and wanted to share a few thoughts before our call on Thursday.
+
+Overall, the direction is strong. The decision to phase the rollout across three regions rather than launching everywhere at once addresses the capacity concerns the operations team raised last month, and the revised timeline looks realistic given the hiring plan. I also appreciate that the budget section now separates one-time setup costs from recurring expenses, which will make the conversation with finance much easier.
+
+There are two areas where I think we need more detail. First, the risk section mentions vendor dependency but does not describe what happens if the primary vendor misses a delivery milestone. Even a short contingency paragraph would help. Second, the success metrics are defined for the end of the twelve-month period, but we will need interim checkpoints to know whether we are on track. Could you propose quarterly targets for the two or three metrics that matter most?
+
+One smaller point: the executive summary runs to nearly two pages. Given who will be reading it, I would suggest cutting it to a single page and moving the supporting detail into the body of the document.
+
+If it would help, I am happy to spend thirty minutes on Wednesday walking through these together before the wider group meets. Let me know what works for you.
+
+Best regards,
+Morgan

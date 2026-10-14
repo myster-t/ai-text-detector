@@ -1,0 +1,36 @@
+{
+  "original": {
+    "description": "The Binoculars paper's reference pair and the thresholds derived for it. Calibrated: reports state a verdict.",
+    "observer": "tiiuae/falcon-7b",
+    "performer": "tiiuae/falcon-7b-instruct",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen2.5-1.5B",
+        "Qwen2.5-1.5B"
+      ],
+      [
+        "openai-community/gpt2",
+        "GPT-2"
+      ]
+    ],
+    "calibrated": true,
+    "threshold_accuracy": 0.9015310749276843,
+    "threshold_low_fpr": 0.8536432310785527
+  },
+  "latest": {
+    "description": "Current-generation equivalents (Qwen3.5, 2026). No published thresholds exist for this pair, so reports give no verdict; they show where the text falls relative to the control samples. Measured in October 2026 to separate the controls less well than the original pair; kept as a worked example, not a recommendation.",
+    "observer": "Qwen/Qwen3.5-9B-Base",
+    "performer": "Qwen/Qwen3.5-9B",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen3.5-2B-Base",
+        "Qwen3.5-2B-Base"
+      ],
+      [
+        "Qwen/Qwen3.5-0.8B-Base",
+        "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false
+  }
+}
