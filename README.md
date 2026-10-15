@@ -129,8 +129,11 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 - Summary tiles (Binoculars, Fast-DetectGPT, perplexity, GLTR top-10 share, AI-isms, sentence-length variation, hidden
   characters), each with a bar showing the human and machine control ranges and the file's position.
 - **The shape of the text**: a violin panel for every measure (about 30), human controls in green and machine controls in
-  red with the individual control points and medians, and the file as a line across both. Each panel states the AUC with
-  which that measure alone separates the two control groups, so you can see at a glance which signals to trust.
+  red with the individual control points and medians, the cut-point that best separates the two groups as a dotted line,
+  and the file as a line across both. The axis always runs with the human direction up; the file line and the panel border
+  are green or red for the side of the cut the file lands on; each panel states the AUC with which that measure alone
+  separates the controls, and panels under 0.7 are drawn grey, dashed and desaturated as weak evidence, so the red panels
+  are the ones to read.
 - Number-line strips for Binoculars and Fast-DetectGPT with threshold lines drawn only when they apply.
 - A **token heat map**: the text with every token coloured by where the real next token sat in the model's ranking
   (top-1, top-10, top-100, top-1000, beyond); hover for rank, log-probability and entropy.

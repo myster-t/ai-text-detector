@@ -112,11 +112,27 @@ for k, title, hih, note in features.MEASURES:
 vals = {(p, k): g(p) for p in texts for _, k, _, _, _, g, _ in MEAS}
 def hv(k): return [vals[(p, k)] for p in HC]
 def mv(k): return [vals[(p, k)] for p in MC]
+LOGK = {k for _, k, _, _, _, _, lg in MEAS if lg}
+def cutpoint(k):
+    """The value that best separates the two control groups for this measure in its claimed direction: the midpoint
+    between adjacent sorted control values that maximises balanced accuracy; ties go to the cut nearest the midpoint of
+    the two group medians. Computed in log space for log-scale measures. None when no direction is claimed."""
+    hih = next(h for _, kk, _, h, _, _, _ in MEAS if kk == k)
+    f = (lambda x: math.log10(max(x, 1e-9))) if k in LOGK else (lambda x: x)
+    h = sorted(f(x) for x in hv(k) if x == x); m = sorted(f(x) for x in mv(k) if x == x)
+    if hih is None or not h or not m: return None
+    allv = sorted(h + m); cands = [(a + b) / 2 for a, b in zip(allv, allv[1:]) if b > a]
+    if not cands: return None
+    med = (h[len(h) // 2] + m[len(m) // 2]) / 2
+    def bal(c):
+        th = sum(1 for x in h if (x >= c) == hih) / len(h); tm = sum(1 for x in m if (x >= c) != hih) / len(m)
+        return (th + tm) / 2
+    best = max(cands, key=lambda c: (round(bal(c), 6), -abs(c - med)))
+    return 10 ** best if k in LOGK else best
 def side_text(val, k, hih):
-    h = sorted(x for x in hv(k) if x == x); m = sorted(x for x in mv(k) if x == x)
-    if not h or not m or val != val or hih is None: return ""
-    mid = (max(m) + min(h)) / 2 if hih else (max(h) + min(m)) / 2
-    return "human" if (val >= mid) == hih else "machine"
+    c = cutpoint(k)
+    if c is None or val != val: return ""
+    return "human" if (val >= c) == hih else "machine"
 def separation(k):
     """AUC of this measure alone on the controls: P(human control is on the human side of a machine control)."""
     hih = next(h for _, kk, _, h, _, _, _ in MEAS if kk == k)
@@ -141,7 +157,10 @@ h1{font-size:1.75rem;margin:0 0 4px;text-wrap:balance}h2{font-size:1.25rem;margi
 .tile .v{font-size:1.6rem;font-weight:700;line-height:1.2;margin:2px 0;font-variant-numeric:tabular-nums}.tile .s{font-size:.84rem;margin-top:2px}.tile .side{font-weight:600}.posbar{width:100%;height:22px;display:block;margin-top:6px}
 .verdict{background:var(--panel);border:1px solid var(--rule);border-left:6px solid var(--link);border-radius:10px;padding:14px 18px;margin:0 0 14px}.verdict b{font-size:1.3rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}.violin{width:100%;height:auto;display:block;background:var(--panel);border:2px solid var(--rule);border-radius:8px}
-.violin.vh{border-color:var(--hum)}.violin.vm{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}.violin.weak{opacity:.55}
+.violin.vh{border-color:var(--hum)}.violin.vm{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}
+.violin.weak{filter:saturate(.15);border-style:dashed;border-color:var(--mut)}
+.pkey{display:flex;flex-wrap:wrap;gap:10px 18px;margin:8px 0 14px;font-size:.86rem}.pkey span{display:inline-flex;align-items:center;gap:7px}.kb{display:inline-block;width:26px;height:16px;border-radius:4px;border:2px solid var(--rule);background:var(--panel)}
+.kb.h{border-color:var(--hum)}.kb.m{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}.kb.w{border-style:dashed;border-color:var(--mut);filter:saturate(.15)}
 table{border-collapse:collapse;width:100%;font-size:.86rem;line-height:1.4}th,td{border:1px solid var(--rule);padding:6px 8px;vertical-align:top;text-align:left}th{background:var(--th)}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .wrap{overflow-x:auto;margin:10px 0 16px}.bar{display:inline-block;height:9px;background:var(--link);vertical-align:middle;border-radius:2px}.tgt{font-weight:600}
 .strip{width:100%;max-width:1000px;height:auto;display:block;margin:4px 0 14px}.legend{font-size:.84rem;color:var(--mut);max-width:none}.sw{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin-right:4px}
@@ -218,7 +237,7 @@ for p in targets:
     nh, nm = sum(1 for _, s in sides if s == "human"), sum(1 for _, s in sides if s == "machine")
     strong = [(k, s) for k, s in sides if separation(k) == separation(k) and separation(k) >= 0.85]
     sh, sm = sum(1 for _, s in strong if s == "human"), sum(1 for _, s in strong if s == "machine")
-    box += f"<p>Across the {len(sides)} directional measures below, this file lands on the human side of the control gap for <b>{nh}</b> and on the machine side for <b>{nm}</b>. Counting only the {len(strong)} measures that separate the controls well under this profile (AUC ≥ 0.85): human side <b>{sh}</b>, machine side <b>{sm}</b>. Model-based signals carry most of the weight; stylometric measures describe register and rhythm and are weaker evidence on their own.</p>"
+    box += f"<p>Across the {len(sides)} directional measures below, this file lands on the human side of the controls' best cut-point for <b>{nh}</b> and on the machine side for <b>{nm}</b>. Counting only the {len(strong)} measures that separate the controls well under this profile (AUC ≥ 0.85): human side <b>{sh}</b>, machine side <b>{sm}</b>. Model-based signals carry most of the weight; stylometric measures describe register and rhythm and are weaker evidence on their own.</p>"
     def tile(k, label, v, hih, sub=""):
         s = side_text(v, k, hih); scls = "ok" if s == "human" else ("bad" if s == "machine" else "")
         return f'<div class=tile><div class=k>{esc(label)}</div><div class=v>{fmtk(k, v)}</div><div class=s>{sub}{(" · <span class=\"side " + scls + "\">" + s + " side</span>") if s else ""}</div>{charts.position_bar(hv(k), mv(k), v, hih)}</div>'
@@ -232,7 +251,7 @@ for p in targets:
         items = sorted(items, key=lambda it: -(separation(it[0]) if separation(it[0]) == separation(it[0]) else 0))
         for k, title, hih, note, lg in items:
             auc = separation(k); sep = f"AUC {auc:.2f}" if auc == auc else ""
-            vio += charts.violin(title, hv(k), mv(k), vals[(p, k)], hih, note=(sep + ("; " if note and sep else "") + note), log=lg, auc=auc, side=side_text(vals[(p, k)], k, hih) or None)
+            vio += charts.violin(title, hv(k), mv(k), vals[(p, k)], hih, note=(sep + ("; " if note and sep else "") + note), log=lg, auc=auc, side=side_text(vals[(p, k)], k, hih) or None, cut=cutpoint(k))
         vio += "</div>"
     strips = charts.strip("Binoculars score (higher = more human-like)", [(c.name, bino_res[c.resolve()][0], is_human[c.resolve()]) for c in CONTROLS], b, p.name, lines=tlines)
     strips += charts.strip("Fast-DetectGPT (lower = more human-like)", [(c.name, bino_res[c.resolve()][2], is_human[c.resolve()]) for c in CONTROLS], fd, p.name)
@@ -256,7 +275,8 @@ for p in targets:
 <div class=tiles>{tiles}</div>
 <p class=legend>Each tile's bar shows the control ranges (<span class=sw style="background:var(--hum)"></span>human, <span class=sw style="background:var(--mach)"></span>machine) and this file as a diamond.</p>
 <h2>The shape of this text against the controls</h2>
-<p>Every measure is computed for {len(HUMAN)} human and {len(AI)} machine control texts in the same run with the same models. Each panel shows the two control distributions as violins (points are the individual controls, the bar is the median) and this file as a dashed line. <b>Up is always the human direction</b>: panels for measures where lower values are more human-like have their axis reversed, so you never need to remember which way a measure runs. The file line and the panel border are <span class=ok><b>green</b></span> when the file lands on the human side of the gap between the groups and <span class=bad><b>red with a halo</b></span> when it lands on the machine side; skim for red. Panels are ordered by "AUC", how well that measure alone separates the two control groups (1.0 = perfectly, 0.5 = not at all); panels under 0.7 are dimmed as weak evidence on these controls.</p>
+<p>Every measure is computed for {len(HUMAN)} human and {len(AI)} machine control texts in the same run with the same models. Each panel shows the two control distributions as violins (points are the individual controls, the bar is the median), the dotted line is the cut-point that best separates the two groups, and the dashed line is this file. <b>Up is always the human direction</b>: panels for measures where lower values are more human-like have their axis reversed. Panels are ordered by "AUC", how well that measure alone separates the two control groups (1.0 = perfectly, 0.5 = not at all).</p>
+<div class=pkey><span><i class="kb h"></i> green border: this file is on the <b>human</b> side of the cut</span><span><i class="kb m"></i> red border and halo: this file is on the <b>machine</b> side; skim for these</span><span><i class="kb w"></i> grey, dashed, desaturated: <b>weak measure</b> (AUC under 0.7), it barely separates the controls, so its side is not evidence and is left out of the strong count above</span></div>
 {vio}
 <h2>Number lines with thresholds</h2>{legend}{strips}
 <h2>Token predictability map ({esc(L0)})</h2>

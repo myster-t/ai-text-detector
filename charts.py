@@ -18,7 +18,7 @@ def _wrap(title, n=38):
     cut = title.rfind(" ", 0, n)
     return [title[:cut], title[cut + 1:]] if cut > 10 else [title[:n], title[n:]]
 
-def violin(title, human, machine, target, higher_is_human=None, note="", log=False, fmt="{:.3g}", W=300, H=220, auc=None, side=None):
+def violin(title, human, machine, target, higher_is_human=None, note="", log=False, fmt="{:.3g}", W=300, H=220, auc=None, side=None, cut=None):
     """Two vertical violins (human green, machine red), clipped to each group's range, with the control points, group
     medians, and the file's value as a line across both. The axis is oriented so that UP is always the human direction
     (reversed for lower-is-human measures; tick labels keep the real values). side = "human"/"machine"/None colours the
@@ -67,12 +67,15 @@ def violin(title, human, machine, target, higher_is_human=None, note="", log=Fal
             s = sorted(fv); med = s[len(s) // 2] if len(s) % 2 else (s[len(s) // 2 - 1] + s[len(s) // 2]) / 2; ym = Yf(med)
             out.append(f'<line x1="{cx-half:.1f}" y1="{ym:.1f}" x2="{cx+half:.1f}" y2="{ym:.1f}" stroke="currentColor" stroke-width="2"><title>{name} median</title></line>')
         out.append(f'<text x="{cx:.1f}" y="{H-9}" font-size="10.5" text-anchor="middle" font-family="{FONT}" fill="currentColor" fill-opacity=".8">{name} ({len(vals)})</text>')
+    if cut is not None and cut == cut:
+        yc = Y(cut)
+        out.append(f'<line x1="{L}" y1="{yc:.1f}" x2="{W-R}" y2="{yc:.1f}" stroke="currentColor" stroke-opacity=".55" stroke-width="1" stroke-dasharray="2 3"><title>control cut-point {fmt.format(cut)}</title></line><text x="{L+2}" y="{yc-3:.1f}" font-size="8.5" font-family="{FONT}" fill="currentColor" fill-opacity=".6">cut {fmt.format(cut)}</text>')
     if tv is not None:
         y = Y(tv); col = badge[1] if badge else "var(--tgt)"
         out.append(f'<line x1="{L}" y1="{y:.1f}" x2="{W-R}" y2="{y:.1f}" stroke="{col}" stroke-width="2.5" stroke-dasharray="6 3"/>'
                    f'<polygon points="{W-R-1},{y:.1f} {W-R-9},{y-5:.1f} {W-R-9},{y+5:.1f}" fill="{col}"/>'
                    f'<text x="{W-R-12}" y="{y-5 if y-5 > top+8 else y+13:.1f}" font-size="10.5" font-weight="700" text-anchor="end" font-family="{FONT}" fill="{col}" stroke="var(--panel)" stroke-width="3" paint-order="stroke">this file {fmt.format(tv)}</text>')
-    if weak: out.append(f'<text x="{W/2:.0f}" y="{top+11}" font-size="9.5" text-anchor="middle" font-family="{FONT}" fill="currentColor" fill-opacity=".55">weak measure on these controls (AUC {auc:.2f})</text>')
+    if weak: out.append(f'<rect x="{W/2-92:.0f}" y="{top+2}" width="184" height="15" rx="7" fill="currentColor" fill-opacity=".12"/><text x="{W/2:.0f}" y="{top+13}" font-size="9.5" font-weight="700" text-anchor="middle" font-family="{FONT}" fill="currentColor" fill-opacity=".85">weak measure here (AUC {auc:.2f})</text>')
     out.append("</svg>"); return "".join(out)
 
 def strip(title, points, target_val, target_name, log=False, lines=(), W=860, H=96):
