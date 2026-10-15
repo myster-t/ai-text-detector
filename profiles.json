@@ -1,6 +1,6 @@
 {
   "original": {
-    "description": "The Binoculars paper's reference pair and the thresholds derived for it. Calibrated: reports state a verdict.",
+    "description": "The Binoculars paper's reference pair and the thresholds derived for it (2023 models). Calibrated: reports state a Binoculars verdict. Select with --older-models.",
     "observer": "tiiuae/falcon-7b",
     "performer": "tiiuae/falcon-7b-instruct",
     "perplexity_models": [
@@ -18,7 +18,7 @@
     "threshold_low_fpr": 0.8536432310785527
   },
   "latest": {
-    "description": "Current-generation equivalents (Qwen3.5, 2026). No published thresholds exist for this pair, so reports give no verdict; they show where the text falls relative to the control samples. Measured in October 2026 to separate the controls less well than the original pair; kept as a worked example, not a recommendation.",
+    "description": "Default. Current-generation models (Qwen3.5, 2026). No published Binoculars thresholds exist for this pair, so reports give no verdict; they show where the text falls on every measure relative to the control samples, and which measures separate the controls under this pair.",
     "observer": "Qwen/Qwen3.5-9B-Base",
     "performer": "Qwen/Qwen3.5-9B",
     "perplexity_models": [
@@ -29,6 +29,18 @@
       [
         "Qwen/Qwen3.5-0.8B-Base",
         "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false
+  },
+  "dev": {
+    "description": "Development profile: small local models only, for fast iteration on the report. Not a detector recommendation.",
+    "observer": "Qwen/Qwen3.5-2B-Base",
+    "performer": "Qwen/Qwen3.5-0.8B-Base",
+    "perplexity_models": [
+      [
+        "openai-community/gpt2",
+        "GPT-2"
       ]
     ],
     "calibrated": false

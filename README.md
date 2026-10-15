@@ -1,13 +1,19 @@
 # ai-text-detector
 
-Is this text machine-generated? Run three independent, fully local checks and get a printable report per file.
+Is this text machine-generated? Run several independent, fully local checks and get a graphical, printable report per file
+that shows where the text sits against known-human and known-machine control texts on every measure.
 
 1. **Binoculars** (Hans et al., ICML 2024): the best-regarded zero-shot detector, using the paper's exact Falcon-7B model pair
    and thresholds.
-2. **Perplexity and burstiness** (the GLTR / GPTZero family) under two language models.
-3. **Writing-pattern and hidden-character checks**: AI-isms such as "delve", "in today's fast-paced world" and
+2. **Fast-DetectGPT** (Bao et al., ICLR 2024), analytic form, computed from the same two forward passes.
+3. **Token statistics** from a single small model: GLTR rank buckets (Gehrmann et al., 2019), the log-likelihood/log-rank
+   ratio (DetectLLM, Su et al., 2023), mean log-rank and next-token entropy, plus a GLTR-style token heat map of the text.
+4. **Perplexity and burstiness** (the GPTZero family) under two language models, sentence by sentence.
+5. **Stylometry** without any model: lexical diversity (MATTR, MTLD, hapax ratio), sentence- and paragraph-length variation,
+   punctuation and construction rates (em dashes, "not X, but Y", rule-of-three lists, contractions, first person).
+6. **Writing-pattern and hidden-character checks**: AI-isms such as "delve", "in today's fast-paced world" and
    "in conclusion" (rules from the avoid-ai-writing project), plus zero-width characters, bidi controls and lookalike letters
-   from other alphabets.
+   from other alphabets, each marked inline in the text.
 
 No API keys, no uploads, nothing leaves your machine. The installer assumes nothing: no Homebrew, no Python, no Node.
 
@@ -16,10 +22,16 @@ No API keys, no uploads, nothing leaves your machine. The installer assumes noth
 ```sh
 git clone https://github.com/myster-t/ai-text-detector.git
 cd ai-text-detector
-./install.sh            # installs a Python runtime, the packages and ~33 GB of models; ends with a self-test
-./detect essay.txt      # writes reports/essay-report.html and reports/index-report.html
-./detect essay.txt --profile latest   # optional: newer models, no thresholds (see Model profiles)
+./install.sh                    # installs a Python runtime, the packages and ~45 GB of current models; ends with a self-test
+./detect essay.txt              # writes reports/essay-report.html and reports/index-report.html
+./install.sh --older-models     # optional: the 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (~33 GB)
+./detect essay.txt --older-models
 ```
+
+The default is the current-generation model set (Qwen3.5, 2026). It has no published Binoculars thresholds, so the report
+never says "AI" or "human" outright; it shows where the text falls on about thirty measures against 21 control texts and
+which of those measures separate the controls. `--older-models` switches every script to the original Falcon-7B pair
+with the paper's thresholds, which adds a Binoculars verdict line. Both sets can be installed side by side.
 
 `./detect` takes any number of text files and an optional `--out DIR`. The models load for the run and are released when it
 exits; nothing stays resident. Everything lives inside the checkout (`.venv/`, `models/`), so deleting the folder removes it all.
@@ -35,8 +47,8 @@ The models are the cost. They are downloaded once into `./models` (or wherever `
 | What | Size on disk |
 | --- | ---: |
 | Python environment (`.venv`, PyTorch and Transformers) | about 3 GB |
-| `original` profile: Falcon-7B, Falcon-7B-Instruct, Qwen2.5-1.5B, GPT-2 | 33 GB |
-| `latest` profile: Qwen3.5-9B-Base, Qwen3.5-9B, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | 45 GB |
+| default set (`latest`): Qwen3.5-9B-Base, Qwen3.5-9B, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | 45 GB |
+| `--older-models` set (`original`): Falcon-7B, Falcon-7B-Instruct, Qwen2.5-1.5B, GPT-2 | 33 GB |
 | Both profiles | 78 GB |
 
 The installer checks free space at the models location before downloading. To put the models on another disk:
@@ -48,10 +60,10 @@ The installer checks free space at the models location before downloading. To pu
 `AITD_MODELS_DIR` in the environment overrides that file. To remove what was installed:
 
 ```sh
-./uninstall.sh --profile latest     # just that profile's models (shared models are kept)
+./uninstall.sh --profile original   # just the --older-models set (shared models are kept); --profile latest = the default set
 ./uninstall.sh --all-models         # every model
 ./uninstall.sh --all                # models and the Python environment
-./uninstall.sh --profile latest --dry-run   # preview what a removal would free
+./uninstall.sh --profile original --dry-run   # preview what a removal would free
 ```
 
 Nothing is installed outside the checkout except uv itself (in `~/.local/bin`), which other tools may use; remove it with
@@ -60,15 +72,17 @@ Nothing is installed outside the checkout except uv itself (in `~/.local/bin`), 
 ## Expected results
 
 Every run re-scores 21 bundled controls (9 human, 12 machine; see [`controls/README.md`](controls/README.md)) with the same
-models as your file, and every report draws your file on a number line among them. The two anchor controls score like this
-under the default profile:
+models as your file, and every report draws your file among them on every measure. The two anchor controls score like this
+under the `--older-models` set, the only one with published thresholds:
 
 | Text | Binoculars | Verdict | Qwen2.5-1.5B perplexity | Burstiness | GPT-2 perplexity | AI-ism score |
 | --- | ---: | --- | ---: | ---: | ---: | ---: |
 | `controls/human/stewart-letter-1913.txt` (1913 letter, public domain) | 0.972 | human | 24.8 | 43.8 | 47.5 | 1 / 100 |
 | `controls/ai/claude-marketing-paragraph.txt` (unedited LLM output) | 0.800 | AI | 4.9 | 10.0 | 15.5 | 12 / 100 |
 
-The index page shows the full control ranges for the profile you ran. The installer's self-test checks these two.
+Under the default set the same two controls score Binoculars 1.016 (human) and 0.879 (machine), with no verdict line; the
+self-test checks that the human anchor scores above the machine anchor and that the group means separate. The index page of
+every run lists all measures ranked by how well they separate the controls.
 
 How to read them:
 
@@ -86,20 +100,22 @@ The rendered reports for both controls are in [`examples/`](examples/).
 
 ## Model profiles
 
-`profiles.json` defines two model sets. `./detect` and `./install.sh` take `--profile NAME`.
+`profiles.json` defines the model sets. `./detect`, `./install.sh` and `./uninstall.sh` take `--profile NAME`;
+`--older-models` is shorthand for `--profile original`, and no flag means `latest`.
 
 | Profile | Binoculars pair | Perplexity models | Thresholds |
 | --- | --- | --- | --- |
-| `original` (default) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen2.5-1.5B, GPT-2 | the paper's; reports state a verdict |
-| `latest` | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; reports give no verdict |
+| `latest` (default) | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; reports give no verdict |
+| `original` (`--older-models`) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen2.5-1.5B, GPT-2 | the paper's; reports state a verdict |
+| `dev` | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | GPT-2 | none; small models for working on the report itself, not a detector |
 
-Binoculars' published thresholds were derived for the Falcon pair and mean nothing for any other, so the `latest` profile
+Binoculars' published thresholds were derived for the Falcon pair and mean nothing for any other, so the default profile
 deliberately draws no lines and makes no call. Its reports show where your file falls on each measure relative to the 21
 controls, as dots on a number line, and say which side of the gap between the human and machine groups it lands on.
 
 ```sh
-./install.sh --profile latest                 # downloads the latest models (45 GB); original stays if present
-./detect --profile latest essay.txt
+./install.sh --older-models                   # downloads the 2023 set (33 GB); the default set stays if present
+./detect --older-models essay.txt
 ```
 
 Profiles are plain entries in `profiles.json` (observer, performer, perplexity models, optional thresholds). Add one to try
@@ -107,14 +123,23 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 
 ## What a report contains
 
-- The Binoculars score and, under the `original` profile, a verdict against both published thresholds.
-- Number-line strips for Binoculars, perplexity and burstiness showing the human and machine controls as dots and your file
-  as a marker, with the threshold lines drawn only when they apply.
-- The file's numbers next to every control, re-scored in the same run.
+- A verdict box: the Binoculars score and, under `--older-models`, a verdict against both published thresholds; plus a
+  count of how many directional measures put the file on the human or machine side of the control gap, overall and among
+  the measures that separate the controls well under the profile you ran.
+- Summary tiles (Binoculars, Fast-DetectGPT, perplexity, GLTR top-10 share, AI-isms, sentence-length variation, hidden
+  characters), each with a bar showing the human and machine control ranges and the file's position.
+- **The shape of the text**: a violin panel for every measure (about 30), human controls in green and machine controls in
+  red with the individual control points and medians, and the file as a line across both. Each panel states the AUC with
+  which that measure alone separates the two control groups, so you can see at a glance which signals to trust.
+- Number-line strips for Binoculars and Fast-DetectGPT with threshold lines drawn only when they apply.
+- A **token heat map**: the text with every token coloured by where the real next token sat in the model's ranking
+  (top-1, top-10, top-100, top-1000, beyond); hover for rank, log-probability and entropy.
+- The **annotated text**: every AI-ism match marked inline by severity, sentence spans the pattern detector flags, each
+  hidden or non-standard character shown as a red code-point badge in place, and mixed-script words outlined. The pattern
+  and hidden-character tables below it give positions and context.
 - A sentence-by-sentence perplexity table with bars, showing where a text is unusually predictable.
-- The writing-pattern findings: each flagged phrase, its category, severity and the suggested plainer alternative.
-- Hidden or non-standard characters and mixed-script words, with positions.
-- A methods and limits section.
+- Every measurement for the file and every control, and a methods and limits section.
+- The index page lists all files, the control table, and a ranking of all measures by how well they separate the controls.
 
 Reports are self-contained HTML (no scripts, fonts or external assets), print to A4, and render in light and dark mode.
 
@@ -125,9 +150,13 @@ Each check can run on its own and prints JSON:
 ```sh
 .venv/bin/python binoculars.py draft.txt
 .venv/bin/python perplexity.py Qwen/Qwen2.5-1.5B draft.txt
+.venv/bin/python lmfeat.py Qwen/Qwen2.5-1.5B draft.txt     # GLTR buckets, log-rank, LRR, entropy
+.venv/bin/python features.py draft.txt                      # stylometry, no model
 .venv/bin/python style.py draft.txt
 .venv/bin/python unicode_check.py draft.txt
 ```
+
+`charts.py` holds the SVG builders (violins, strips, position bars, token heat map) and has no dependencies.
 
 The scripts find the models in `./models` and run offline by default; no environment variables are needed.
 
@@ -139,6 +168,26 @@ another's predictions, which normalises away prompts and topics that make text p
 machine-written. Texts that a model finds much more predictable than this baseline score low. This repo uses the paper's
 reference pairing, `tiiuae/falcon-7b` as observer and `tiiuae/falcon-7b-instruct` as performer, and its published thresholds.
 `binoculars.py` is about 40 lines and follows Section 3 of the paper.
+
+**Fast-DetectGPT** asks whether the text sits at a local maximum of the model's probability: machine text, being sampled
+from a model, is more probable than the alternatives the model would itself have produced at each position; human text is
+not. The analytic form (Bao et al., 2024, Section 3.2) needs no perturbation: with a sampling distribution from the observer
+and log-probabilities from the performer, the score is the actual tokens' total log-probability minus its expectation under
+sampling, divided by the standard deviation of that expectation. Higher is more machine-like. It reuses the two forward
+passes Binoculars already makes, so it costs nothing extra.
+
+**Token statistics** come from one forward pass of the first perplexity model. For each token the report keeps the rank of
+the real token in the model's prediction, its log-probability and the entropy of the prediction. GLTR (Gehrmann et al., 2019)
+summarises the ranks as the share of tokens in the top-10, top-100 and top-1000, which the report also paints over the text.
+DetectLLM's log-likelihood/log-rank ratio (Su et al., 2023) divides mean negative log-probability by mean log-rank; machine
+text scores higher. Mean entropy says how open the model's prediction was at each step; generators mostly follow the model in
+low-entropy contexts, so human text averages higher.
+
+**Stylometry** (`features.py`) needs no model: moving-average type-token ratio (Covington and McFall, 2010), MTLD (McCarthy
+and Jarvis, 2010), hapax ratio, sentence- and paragraph-length coefficient of variation, word length, and per-thousand-word
+rates of em dashes, semicolons, colons, questions, exclamations, contractions, first-person pronouns, "not X, but Y"
+constructions and three-item lists. These describe register and rhythm; they shift with genre and separate the controls
+only partly, which the report shows honestly through each panel's AUC.
 
 **Perplexity and burstiness** measure how predictable a text is to a language model and how much that varies from sentence
 to sentence. Machine-generated text tends to be uniformly predictable; human writing swings. The idea goes back to GLTR
@@ -180,10 +229,107 @@ which the reports show side by side.
 
 Newer is not better here. The 2026 pair leaves less room between the groups and lets more machine text through, which
 matches a known weakness of the method: as base models train on more synthetic text, machine prose stops surprising them.
-`latest` stays in the repo as a working example of a second profile and of the uncalibrated report, not as a recommendation.
+Even so, `latest` is the default since October 2026: the original pair's advantage is its calibrated verdict line, and
+that line is only meaningful for 2023-era generators; for current text the report's value is the control comparison on
+every measure, which the newer small base model does better (see the next section), and newer models keep arriving.
 The practical lesson from both profiles is the same: polished Claude output in formal registers (an email, a technical
 explanation, a personal essay) scores inside the human range for Binoculars, so a human-side reading is weaker evidence than a
 machine-side one.
+
+## Why machine text can score "human", and which measures to trust
+
+The verdict-style detectors (Binoculars, Fast-DetectGPT) are probability-curvature tests: they ask whether the text is
+*more* predictable to a model than the alternatives that model would itself have written. That works when the text was
+sampled from something close to the scoring model. It fails, in both directions, for several reasons that show up directly
+in this repo's controls:
+
+- **The generator is not the scorer.** Claude Fable 5.1 text scored by Falcon-7B (2023) or by a Qwen3.5 base model is text
+  from a stronger, differently trained model with its own post-training style. It is not especially predictable to the
+  scorer, so its curvature is small and its perplexity ordinary. The ChatGPT (2023) controls, close in era and training data
+  to Falcon, score as machine; the Claude (2026) controls drift into the human range. The method detects "text that follows
+  my model's preferences", not "text written by any machine". DetectRL measured the same thing: Binoculars AUROC 97 on
+  Llama-2-70B text, 88 on ChatGPT, 55 on Claude-instant ([arXiv:2410.23746](https://arxiv.org/abs/2410.23746)); on GPT-4o
+  summaries its true-positive rate at 1% false positives is 0.05 ([arXiv:2412.05139](https://arxiv.org/abs/2412.05139)).
+- **What detectors learned is the instruction-tuning signature, not machine-ness.** Continuations from a *base* Llama-3-8B
+  are rated human 97 to 99% of the time by GPTZero and Pangram, while the instruct model's continuations from the same
+  weights are rated human 17 to 30% ([arXiv:2605.19516](https://arxiv.org/abs/2605.19516)); RLHF makes text *more*
+  detectable ([arXiv:2503.17965](https://arxiv.org/abs/2503.17965)). Heavily prompted, style-guided output (a business
+  email, a technical explainer) carries fewer of those artifacts and reads as human. The stylometry panels show the
+  residue: longer words and higher lexical diversity for the machine controls, which to a base model looks like careful
+  human prose.
+- **Binoculars normalises away part of the signal when the pair agrees too much.** The score is performer perplexity divided
+  by observer-performer cross-perplexity. If the observer and performer make nearly the same predictions (a 2026 base model
+  and its own instruct version, trained on overlapping synthetic data), cross-perplexity tracks perplexity and the ratio
+  compresses toward 1 for every text, human or machine. That is what the `latest` profile measures: the raw perplexity of
+  Qwen3.5-2B-Base separates the controls with AUC 0.97 while the Qwen3.5-9B Binoculars ratio reaches only 0.78. Independent
+  measurements agree that the pair matters more than the statistic: Binoculars on a Qwen3-4B pair scored at chance (0.51)
+  where a Gemma pair scored 0.93 ([arXiv:2610.15870](https://arxiv.org/abs/2610.15870)), and the Fast-DetectGPT authors
+  report a Llama-3-8B base/instruct pair "substantially" beating the Falcon pair (repository README, January 2026). The
+  alignment-imprint statistic, which keeps the base/instruct difference instead of dividing it away, recovers 8 to 14
+  AUROC points on the same pair ([arXiv:2604.16923](https://arxiv.org/abs/2604.16923)).
+- **Register, length and editing.** Short texts, lists, and formal genres sit in the overlap zone for every
+  probability-based method; the paper-era thresholds were set on news and essays of a few hundred tokens. Human text
+  that a model has rewritten is the hardest case of all: Binoculars' recall drops from 93.5% on direct LLM output to 15.1%
+  on LLM-rewritten human text ([arXiv:2607.29539](https://arxiv.org/abs/2607.29539)).
+
+What the controls say about each measure (AUC of the measure alone, human direction; from the index page of each run):
+
+| Measure | `original` profile (Falcon pair, Qwen2.5-1.5B) | `latest` profile (Qwen3.5-9B pair, Qwen3.5-2B-Base) |
+| --- | ---: | ---: |
+| Surprisal spread (sd of token log-probability) | 0.89 | 0.98 |
+| Perplexity of the first small model | 0.88 | 0.97 |
+| Mean next-token entropy | 0.95 | 0.96 |
+| Mean log-rank of the actual token | 0.87 | 0.95 |
+| GLTR top-1 share / top-10 share | 0.84 / 0.83 | 0.94 / 0.92 |
+| DetectLLM log-likelihood/log-rank ratio | 0.92 | 0.94 |
+| Paragraph-length variation | 0.83 | 0.83 |
+| Perplexity shift under sentence shuffling | 0.81 | 0.83 |
+| Binoculars | 0.87 | 0.78 |
+| Sentence-length variation | 0.75 | 0.75 |
+| Fast-DetectGPT (analytic) | 0.86 | 0.73 |
+| Alignment imprint (unweighted) | 0.75 | 0.60 |
+| Burstiness | 0.68 | 0.71 |
+| Contractions per 1,000 words | 0.69 | 0.69 |
+| Lexical diversity (MATTR, MTLD, hapax) | 0.54 to 0.57 | 0.54 to 0.57 |
+| AI-ism score | 0.50 | 0.50 |
+| Em dashes per 1,000 words | 0.33 | 0.33 |
+
+Three practical conclusions. First, on this control set the cheapest signals (one forward pass of a 2B base model: perplexity,
+entropy, log-rank) beat the pair-based detectors, so the report leads with the measures that separate the controls under
+the profile you ran rather than with a fixed favourite. Second, the "machine side" of any measure is stronger evidence than
+the "human side", because every failure mode above pushes machine text toward the human range and almost nothing pushes
+human text toward the machine range except brevity and formula. Third, the punctuation and vocabulary tells (em dashes,
+"delve", rule-of-three lists) are near chance on these controls: Claude Fable 5.1 output in October 2026 has almost none of
+them, and some human writers have many. They remain useful for editing and for older generators.
+
+## Further methods, and what was not added
+
+A survey of 2025-2026 work (October 2026) ranked these as the most useful additions for a local, training-free toolkit.
+The first three are implemented here in reduced form; the rest are open.
+
+| Method | Status | Notes |
+| --- | --- | --- |
+| Alignment imprint / LAPD ([arXiv:2604.16923](https://arxiv.org/abs/2604.16923)) | added, unweighted | log p(performer) − log p(observer) per token; the paper's information weighting and standardisation are not reproduced, and without them it is weak here (AUC 0.60 to 0.75) |
+| Surprisal time-series features: Lastde ([arXiv:2410.06072](https://arxiv.org/abs/2410.06072)), SpecDetect ([arXiv:2508.11343](https://arxiv.org/abs/2508.11343)), DivEye ([arXiv:2509.18880](https://arxiv.org/abs/2509.18880)), late-stage stability ([arXiv:2601.04833](https://arxiv.org/abs/2601.04833)) | added, four simple statistics | spread, volatility, lag-1 autocorrelation, second-half/first-half volatility of the log-probability sequence; the papers' full estimators (diversity entropy, DFT energy, nine-moment set) are not |
+| Perplexity under sentence shuffling, Luminol-AIDetect ([arXiv:2604.25860](https://arxiv.org/abs/2604.25860)) | added as one log ratio | the paper uses a distribution over many shuffles and density estimation; on these controls machine text loses more predictability when shuffled (AUC 0.81 to 0.83) |
+| Telescope ([arXiv:2607.04061](https://arxiv.org/abs/2607.04061)): token-repetition probability from a tiny reference model; reported to beat Binoculars on polished essays | not added | definition needs the full paper; one extra small-model pass |
+| A second observer/performer pair chosen on the controls (Gemma or Llama-3 base/instruct), MOSAIC-style ensembling ([arXiv:2409.07615](https://arxiv.org/abs/2409.07615)) | not added | needs ~16 GB more models; the evidence above says the pair choice is the single biggest lever for Binoculars and Fast-DetectGPT |
+| Conformal thresholds from the human controls; report TPR at 1% FPR ([arXiv:2505.05084](https://arxiv.org/abs/2505.05084)) | not added | needs more than 9 human controls to be meaningful |
+| One supervised vote: `tabularisai/ai-text-detection` (ModernBERT, 150M, MIT) | not added | strong in-distribution, collapses on 2025-26 generators in independent tests (TPR at 1% FPR 0.13 on Qwen3 text); would need a capped weight |
+| Larger, current calibration sets: `mattc95/2026-AI-DETECTOR-BENCHMARK` (MIT, 14 models, Feb 2026), `textsightai/ai-text-detection-benchmark-2026` (CC BY-SA) | not added | would lift the 21 controls to hundreds with GPT-5, Claude Opus 5 and Gemini 3 output |
+| Adversarial harness: `raid-bench`, PADBen, released adversarial paraphrases | not added | to measure how the measures degrade under paraphrase and humanizer tools |
+| Data-derived vocabulary lists (antislop-sampler, slop-forensics) and a pure-Python pattern scorer (sloptrim) beside avoid-ai-writing | not added | the AI-ism rules scored 0.50 AUC on these controls, so better lists are the fix |
+| Hidden-character coverage audit against demarkify (Hangul fillers, tag characters, Cf/Co catch-all) and `confusable_homoglyphs` | not added | current check covers zero-width, bidi, variation selectors, tags, Cf/Co and Cyrillic/Greek/Armenian lookalikes |
+
+Not recommended by the survey: intrinsic-dimension (PHD) scores (near-zero recall at 1% FPR), prompting an LLM to judge
+(below GPTZero even with frontier models), regeneration methods such as DNA-GPT (cost), and any single vocabulary rule as
+decisive evidence. Statistical watermarks (SynthID-Text, KGW) are only detectable with the generator's key, so no blind
+watermark check is possible; hidden-character scanning is the only watermark-adjacent signal available.
+
+StoryScope ([arXiv:2604.03136](https://arxiv.org/abs/2604.03136)) separates AI fiction from human fiction by narrative
+features (character agency, chronology, escalation, moral ambiguity) rather than style, at 93% macro-F1 on 5,000-word
+stories. The features are extracted by an LLM, so it is not a local zero-shot method and is not added; its figure style
+(a distribution per source with the sample marked against it) is what the violin panels in this report follow.
 
 ## Limits
 
@@ -198,6 +344,34 @@ scores alongside drafts, sources and the writer's history, never as a verdict on
   Tom Goldstein. **Spotting LLMs With Binoculars: Zero-Shot Detection of Machine-Generated Text.** ICML 2024.
   [arXiv:2401.12070](https://arxiv.org/abs/2401.12070). Reference code: [ahans30/Binoculars](https://github.com/ahans30/Binoculars)
   (used as the specification for the score; not copied).
+- Junxi Wu, Kailin Huang, Dongjian Hu, Bin Chen, Hao Wu, Shu-Tao Xia, Changliang Zou. **Alignment Imprint: Zero-Shot
+  AI-Generated Text Detection via Provable Preference Discrepancy.** 2026. [arXiv:2604.16923](https://arxiv.org/abs/2604.16923).
+  Source of the alignment-imprint (LAPD) idea.
+- Yihuai Xu, Yongwei Wang, Yifei Bi, Huangsen Cao, Zhouhan Lin, Yu Zhao, Fei Wu. **Training-free LLM-generated Text
+  Detection by Mining Token Probability Sequences.** 2024. [arXiv:2410.06072](https://arxiv.org/abs/2410.06072). Lastde.
+- Advik Raj Basani, Pin-Yu Chen. **Diversity Boosts AI-Generated Text Detection.** TMLR 2026.
+  [arXiv:2509.18880](https://arxiv.org/abs/2509.18880). DivEye.
+- Haitong Luo, Weiyao Zhang, Suhang Wang, Wenji Zou, Chungang Lin, Xuying Meng, Yujun Zhang. **SpecDetect: Simple, Fast,
+  and Training-Free Detection of LLM-Generated Text via Spectral Analysis.** AAAI 2026.
+  [arXiv:2508.11343](https://arxiv.org/abs/2508.11343).
+- Ke Sun, Guangsheng Bao, Han Cui, Yue Zhang. **When AI Settles Down: Late-Stage Stability as a Signature of AI-Generated
+  Text Detection.** 2026. [arXiv:2601.04833](https://arxiv.org/abs/2601.04833).
+- Lucio La Cava, Andrea Tagarelli. **Luminol-AIDetect: Fast Zero-shot Machine-Generated Text Detection based on Perplexity
+  under Text Shuffling.** 2026. [arXiv:2604.25860](https://arxiv.org/abs/2604.25860).
+- Yixuan Even Xu, Ziqian Zhong, Aditi Raghunathan, Fei Fang, J. Zico Kolter. **Base Models Look Human To AI Detectors.**
+  2026. [arXiv:2605.19516](https://arxiv.org/abs/2605.19516).
+- Jenna Russell, Rishanth Rajendhran, Chau Minh Pham, Mohit Iyyer, John Wieting. **StoryScope: Investigating idiosyncrasies
+  in AI fiction.** 2026. [arXiv:2604.03136](https://arxiv.org/abs/2604.03136).
+- Guangsheng Bao, Yanbin Zhao, Zhiyang Teng, Linyi Yang, Yue Zhang. **Fast-DetectGPT: Efficient Zero-Shot Detection of
+  Machine-Generated Text via Conditional Probability Curvature.** ICLR 2024. [arXiv:2310.05130](https://arxiv.org/abs/2310.05130).
+  Reference code: [baoguangsheng/fast-detect-gpt](https://github.com/baoguangsheng/fast-detect-gpt) (used as the
+  specification for the analytic score; not copied).
+- Jinyan Su, Terry Yue Zhuo, Di Wang, Preslav Nakov. **DetectLLM: Leveraging Log Rank Information for Zero-Shot Detection of
+  Machine-Generated Text.** 2023. [arXiv:2306.05540](https://arxiv.org/abs/2306.05540). Source of the LRR measure.
+- Michael A. Covington, Joe D. McFall. **Cutting the Gordian Knot: The Moving-Average Type-Token Ratio (MATTR).** Journal of
+  Quantitative Linguistics 17(2), 2010.
+- Philip M. McCarthy, Scott Jarvis. **MTLD, vocd-D, and HD-D: A validation study of sophisticated approaches to lexical
+  diversity assessment.** Behavior Research Methods 42, 2010.
 - Sebastian Gehrmann, Hendrik Strobelt, Alexander M. Rush. **GLTR: Statistical Detection and Visualization of Generated
   Text.** ACL 2019 (system demonstrations). [arXiv:1906.04043](https://arxiv.org/abs/1906.04043).
 - Irene Solaiman et al. **Release Strategies and the Social Impacts of Language Models.** 2019.

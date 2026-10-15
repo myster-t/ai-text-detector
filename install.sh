@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # ai-text-detector installer. Assumes nothing: no Homebrew, no Python, no Hugging Face CLI.
-# Usage: ./install.sh [--profile original|latest] [--models-dir PATH]
-#   --profile     which model set to download (profiles.json). Default original (~33 GB); latest adds ~45 GB.
+# Usage: ./install.sh [--older-models | --profile NAME] [--models-dir PATH]
+#   --older-models  download the original 2023 set (Falcon-7B pair + Qwen2.5/GPT-2, ~33 GB) instead of the default
+#                   current set (Qwen3.5, ~45 GB). --profile NAME picks any entry in profiles.json.
 #   --models-dir  keep the models somewhere else (an external drive, a shared folder). Remembered in .models-dir.
 # Installs uv (a standalone Python manager), a Python 3.12 runtime, the virtualenv, and downloads the models
 # into ./models so the checkout is self-contained. Re-running is safe; finished steps are skipped.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$ROOT"
-PROFILE=original; MODELS_DIR=""
+PROFILE=latest; MODELS_DIR=""
 while [[ $# -gt 0 ]]; do case "$1" in
+  --older-models) PROFILE=original; shift;;
   --profile) PROFILE="$2"; shift 2;; --profile=*) PROFILE="${1#--profile=}"; shift;;
   --models-dir) MODELS_DIR="$2"; shift 2;; --models-dir=*) MODELS_DIR="${1#--models-dir=}"; shift;;
-  -h|--help) sed -n '2,6p' "$0"; exit 0;; *) fail "unknown option $1 (use --profile NAME, --models-dir PATH)";; esac; done
+  -h|--help) sed -n '2,6p' "$0"; exit 0;; *) fail "unknown option $1 (use --older-models, --profile NAME, --models-dir PATH)";; esac; done
 # where the models live: --models-dir > AITD_MODELS_DIR > ./.models-dir file > ./models
 if [[ -n "$MODELS_DIR" ]]; then mkdir -p "$MODELS_DIR"; MODELS_DIR="$(cd "$MODELS_DIR" && pwd)"; printf '%s\n' "$MODELS_DIR" > .models-dir
 elif [[ -n "${AITD_MODELS_DIR:-}" ]]; then MODELS_DIR="$AITD_MODELS_DIR"
@@ -68,4 +70,4 @@ PY
 say "Self-test on the bundled controls (loads all models once; a few minutes)"
 ./detect --selftest --profile "$PROFILE"
 say "Remove models later with ./uninstall.sh"
-say "Done. Score a file with:   ./detect path/to/text.txt$( [[ "$PROFILE" != original ]] && echo " --profile $PROFILE")      (reports land in ./reports)"
+say "Done. Score a file with:   ./detect path/to/text.txt$( [[ "$PROFILE" == original ]] && echo " --older-models" || { [[ "$PROFILE" != latest ]] && echo " --profile $PROFILE"; } )      (reports land in ./reports)"

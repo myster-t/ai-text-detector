@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Remove downloaded models and/or the Python environment. Nothing else on the machine is touched.
 # Usage: ./uninstall.sh [--profile NAME | --all-models] [--venv] [--all] [--yes]
-#   --profile NAME   remove only that profile's models (keeps models shared with other profiles)
+#   --profile NAME   remove only that profile's models (latest = default set, original = --older-models set); shared models are kept
 #   --all-models     remove every downloaded model
 #   --venv           remove the Python environment (.venv)
 #   --all            everything above
