@@ -49,6 +49,7 @@ if not args.files: ap.error("give at least one text file, or --selftest")
 out = pathlib.Path(args.out).expanduser(); out.mkdir(parents=True, exist_ok=True)
 # Google Docs links: fetch each tab as plain text into the output folder and score those files
 import gdoc
+def log(msg): print(msg, file=sys.stderr, flush=True)
 _files = []
 for f in args.files:
     if re.match(r"https?://docs\.google\.com/", f):

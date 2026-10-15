@@ -6,9 +6,9 @@ Works for documents shared as "Anyone with the link" (or published): Google's ex
                                                                         browser URL when that tab is open, e.g. t.0)
 A private document returns an HTML sign-in page instead of text; the tool then explains what to do.
 
-Tab discovery: the export has no tab list, so tabs come from (1) the ids you pass (`--tabs t.0,t.abc123`), (2) a `tab=` in
-the URL, or (3) the document's HTML export, which carries one bookmark anchor per tab in current Google Docs; if none of those
-yields anything, the whole document is scored as one text.
+Tab discovery: tabs come from (1) the ids you pass (`--tabs t.0,t.abc123`), (2) the document's preview page, which lists
+every tab id for a link-shared document, or (3) a `tab=` in the URL; if none of those yields anything, the whole document
+is scored as one text.
 Usage: python gdoc.py URL [--tabs t.0,t.xyz] -> writes <title>.<tab>.txt files to the current folder and prints them."""
 import sys, re, json, html, urllib.request, urllib.error, urllib.parse, pathlib
 
@@ -47,39 +47,44 @@ def export_text(did, tab=None):
     return text.replace("\r\n", "\n").strip()
 
 def discover_tabs(did):
-    """Tab ids and titles from the HTML export's outline, when present. Returns [] if nothing recognisable."""
-    try: data, ctype = _get(f"https://docs.google.com/document/d/{did}/export?format=html")
+    """Tab ids in document order from the document's preview page, which Google serves without sign-in for link-shared
+    documents and which embeds the tab list in its page model (the first tab is listed as "" and exported as t.0).
+    Returns a list of tab ids, or [] when nothing recognisable is found."""
+    try: data, _ = _get(f"https://docs.google.com/document/d/{did}/preview")
     except Exception: return []
     h = data.decode("utf-8", errors="replace")
-    tabs = []
-    # current exports mark each tab with an anchor / heading carrying the tab id (t.0, t.<hash>); keep the order of appearance
-    for m in re.finditer(r'(?:id|name)="(t\.[A-Za-z0-9_-]+)"[^>]*>(?:\s*<[^>]+>)*\s*([^<]{0,120})', h):
-        tid, title = m.group(1), html.unescape(m.group(2)).strip()
-        if tid not in [t for t, _ in tabs]: tabs.append((tid, title))
-    return tabs
+    # the page model contains maps keyed by tab id: {"":false,"t.abc123":false,...}; take the first such map in page order
+    m = re.search(r'\{"":(?:\[[^\]]*\]|false|true)(?:,"t\.[A-Za-z0-9_-]+":(?:\[[^\]]*\]|false|true))+\}', h)
+    if not m: return []
+    ids = re.findall(r'"(t\.[A-Za-z0-9_-]+)"', m.group(0))
+    return ["t.0"] + [t for t in ids if t != "t.0"]
 
 def title_of(did):
-    try:
-        data, _ = _get(f"https://docs.google.com/document/d/{did}/export?format=html")
-        m = re.search(r"<title>(.*?)</title>", data.decode("utf-8", errors="replace"), re.S)
-        return html.unescape(m.group(1)).strip() if m else did[:8]
-    except Exception: return did[:8]
+    for u in (f"https://docs.google.com/document/d/{did}/preview", f"https://docs.google.com/document/d/{did}/export?format=html"):
+        try:
+            data, _ = _get(u); m = re.search(r"<title>(.*?)</title>", data.decode("utf-8", errors="replace"), re.S)
+            if m:
+                t = html.unescape(m.group(1)).strip(); t = re.sub(r"\s*-\s*Google Docs$", "", t)
+                if t: return t
+        except Exception: pass
+    return did[:8]
 
 def fetch(url, tabs=None):
-    """Return a list of (label, text). label = '<doc title> - <tab title or id>' or just the title for a single text."""
+    """Return a list of (label, text): one entry per tab, labelled with the document title, the tab number and the tab's
+    opening words; or a single entry for the whole document when no tabs can be determined."""
     did = doc_id(url); title = title_of(did)
     ids = [t.strip() for t in (tabs or "").split(",") if t.strip()] if tabs else []
-    if not ids and url_tab(url): ids = [url_tab(url)]
-    found = discover_tabs(did) if not ids else []
-    if found and len(found) > 1: ids = [t for t, _ in found]
-    names = dict(found) if found else {}
+    if not ids:
+        found = discover_tabs(did)
+        if len(found) > 1: ids = found
+        elif url_tab(url): ids = [url_tab(url)]
     out = []
-    if ids:
-        for t in ids:
-            try: txt = export_text(did, t)
-            except PermissionError: raise
-            except Exception as e: print(f"[gdoc] tab {t}: {e}", file=sys.stderr); continue
-            if txt: out.append((f"{title} - {names.get(t) or t}", txt))
+    for n, t in enumerate(ids, 1):
+        try: txt = export_text(did, t)
+        except PermissionError: raise
+        except Exception as e: print(f"[gdoc] tab {t}: {e}", file=sys.stderr); continue
+        if txt:
+            first = " ".join(txt.split()[:6]); out.append((f"{title} - tab {n} - {first}" if len(ids) > 1 else f"{title} - {t}", txt))
     if not out: out.append((title, export_text(did)))
     return out
 

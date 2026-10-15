@@ -56,10 +56,11 @@ combination can be installed side by side.
 ```
 
 This uses Google's plain-text export, which needs no account or API key but requires the document to be shared as
-"Anyone with the link" (Share > General access); a private document yields a clear message saying so. The fetched text of
-each tab is saved next to its report, so what was scored is on record. Without a Google account the tool cannot list a
-document's tabs itself, so it uses the ids you pass, the id in the link, or the ids it can find in the HTML export, and
-otherwise scores the whole document as one text.
+"Anyone with the link" (Share > General access); a private document yields a clear message saying so. The tool reads the
+tab list from the document's preview page (served without sign-in for link-shared documents), exports each tab on its own,
+and names each report by the document title, the tab number and the tab's opening words. The fetched text of each tab is
+saved next to its report, so what was scored is on record. `--tabs` overrides discovery with explicit ids; if neither
+yields anything, the whole document is scored as one text. Quote the link in the shell: `?` and `&` are shell characters.
 
 To update later, run `./update.sh` inside the folder: it downloads the latest files from GitHub and copies them over this
 folder (no git needed; a git clone is pulled instead), keeps your models, Python environment, settings, reports and any
