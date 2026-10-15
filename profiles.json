@@ -1,4 +1,20 @@
 {
+  "hybrid": {
+    "description": "Default since 2026-10-14. Hybrid: the Binoculars paper's Falcon-7B pair as observer/performer (the best pair for Binoculars and Fast-DetectGPT on the 67 controls, AUC 0.80 / 0.79) with the current Qwen3.5 small base models for the token statistics (the strongest measures, AUC 0.90-0.96). No published thresholds for this combination, so reports give no verdict.",
+    "observer": "tiiuae/falcon-7b",
+    "performer": "tiiuae/falcon-7b-instruct",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen3.5-2B-Base",
+        "Qwen3.5-2B-Base"
+      ],
+      [
+        "Qwen/Qwen3.5-0.8B-Base",
+        "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false
+  },
   "original": {
     "description": "The Binoculars paper's reference pair and the thresholds derived for it (2023 models). Calibrated: reports state a Binoculars verdict. Select with --older-models.",
     "observer": "tiiuae/falcon-7b",
@@ -18,7 +34,7 @@
     "threshold_low_fpr": 0.8536432310785527
   },
   "latest": {
-    "description": "Default. Current-generation models (Qwen3.5, 2026). No published Binoculars thresholds exist for this pair, so reports give no verdict; they show where the text falls on every measure relative to the control samples, and which measures separate the controls under this pair.",
+    "description": "Current-generation models only (Qwen3.5, 2026). Measured: its 9B pair is near chance for Binoculars / Fast-DetectGPT on the 67 controls (AUC 0.62 / 0.60); its small base models carry the strongest measures. Kept as the all-Qwen3.5 option.",
     "observer": "Qwen/Qwen3.5-9B-Base",
     "performer": "Qwen/Qwen3.5-9B",
     "perplexity_models": [

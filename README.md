@@ -22,16 +22,18 @@ No API keys, no uploads, nothing leaves your machine. The installer assumes noth
 ```sh
 git clone https://github.com/myster-t/ai-text-detector.git
 cd ai-text-detector
-./install.sh                    # installs a Python runtime, the packages and ~45 GB of current models; ends with a self-test
+./install.sh                    # installs a Python runtime, the packages and ~35 GB of models; ends with a self-test
 ./detect essay.txt              # writes reports/essay-report.html and reports/index-report.html
 ./install.sh --older-models     # optional: the 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (~33 GB)
 ./detect essay.txt --older-models
 ```
 
-The default is the current-generation model set (Qwen3.5, 2026). It has no published Binoculars thresholds, so the report
-never says "AI" or "human" outright; it shows where the text falls on about thirty measures against 67 control texts and
-which of those measures separate the controls. `--older-models` switches every script to the original Falcon-7B pair
-with the paper's thresholds, which adds a Binoculars verdict line. Both sets can be installed side by side.
+The default is a hybrid model set chosen on the 67 controls: the Binoculars paper's Falcon-7B pair for the pair-based scores
+(the best pair measured for them) and the current Qwen3.5 small base models for the token statistics (the strongest measures).
+It has no published Binoculars thresholds, so the report never says "AI" or "human" outright; it shows where the text falls
+on about thirty measures against the control texts and which of those measures separate the controls. `--older-models`
+switches every script to the original 2023 set with the paper's thresholds, which adds a Binoculars verdict line.
+`--profile latest` is the all-Qwen3.5 set. Any combination can be installed side by side.
 
 `./detect` takes any number of text files and an optional `--out DIR`. The models load for the run and are released when it
 exits; nothing stays resident. The control texts are scored once per model set and cached in `controls/scores/<profile>.json`
@@ -49,9 +51,10 @@ The models are the cost. They are downloaded once into `./models` (or wherever `
 | What | Size on disk |
 | --- | ---: |
 | Python environment (`.venv`, PyTorch and Transformers) | about 3 GB |
-| default set (`latest`): Qwen3.5-9B-Base, Qwen3.5-9B, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | 45 GB |
-| `--older-models` set (`original`): Falcon-7B, Falcon-7B-Instruct, Qwen2.5-1.5B, GPT-2 | 33 GB |
-| Both profiles | 78 GB |
+| default set (`hybrid`): Falcon-7B, Falcon-7B-Instruct, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | 35 GB |
+| `--older-models` set (`original`): Falcon-7B, Falcon-7B-Instruct, Qwen2.5-1.5B, GPT-2 | 33 GB (4 GB beyond the default; the Falcon pair is shared) |
+| `--profile latest`: Qwen3.5-9B-Base, Qwen3.5-9B, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | 45 GB (39 GB beyond the default) |
+| All three | 82 GB |
 
 The installer checks free space at the models location before downloading. To put the models on another disk:
 
@@ -82,8 +85,8 @@ under the `--older-models` set, the only one with published thresholds:
 | `controls/human/stewart-letter-1913.txt` (1913 letter, public domain) | 0.972 | human | 24.8 | 43.8 | 47.5 | 1 / 100 |
 | `controls/ai/claude-marketing-paragraph.txt` (unedited LLM output) | 0.800 | AI | 4.9 | 10.0 | 15.5 | 12 / 100 |
 
-Under the default set the same two controls score Binoculars 1.016 (human) and 0.879 (machine), with no verdict line; the
-self-test checks that the human anchor scores above the machine anchor and that the group means separate. The index page of
+Under the default hybrid set the pair-based scores are the same as in that table (same Falcon pair) but no verdict line is
+drawn; the self-test checks that the human anchor scores above the machine anchor and that the group means separate. The index page of
 every run lists all measures ranked by how well they separate the controls.
 
 How to read them:
@@ -103,11 +106,12 @@ The rendered reports for both controls are in [`examples/`](examples/).
 ## Model profiles
 
 `profiles.json` defines the model sets. `./detect`, `./install.sh` and `./uninstall.sh` take `--profile NAME`;
-`--older-models` is shorthand for `--profile original`, and no flag means `latest`.
+`--older-models` is shorthand for `--profile original`, and no flag means `hybrid`.
 
 | Profile | Binoculars pair | Perplexity models | Thresholds |
 | --- | --- | --- | --- |
-| `latest` (default) | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; reports give no verdict |
+| `hybrid` (default) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; reports give no verdict |
+| `latest` | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; all-Qwen3.5 option |
 | `original` (`--older-models`) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen2.5-1.5B, GPT-2 | the paper's; reports state a verdict |
 | `falcon3` | tiiuae/Falcon3-7B-Base, Falcon3-7B-Instruct | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; bake-off candidate, measured worse than both (see below) |
 | `dev` | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | GPT-2 | none; small models for working on the report itself, not a detector |
@@ -240,9 +244,10 @@ the best single-model statistics in one run, a hybrid profile is one line in `pr
 observer/performer with the Qwen3.5 small models for the token statistics (both model sets must be installed). Remove the
 bake-off models with `./uninstall.sh --profile falcon3`.
 
-Even so, `latest` is the default since October 2026: the original pair's advantage is its calibrated verdict line, and
-that line is only meaningful for 2023-era generators; for current text the report's value is the control comparison on
-every measure, which the newer small base model does better (see the next section), and newer models keep arriving.
+That is why the default is the hybrid: the Falcon pair for Binoculars, Fast-DetectGPT and the alignment imprint, and
+the Qwen3.5 small models for everything token-level. Its control cache was assembled from the two measured runs (pair
+scores from `original`, token statistics from `latest`), so it needed no extra pass. The published thresholds still are
+not drawn under it, because they were set for a different perplexity model and a different control set.
 The practical lesson from both profiles is the same: polished Claude output in formal registers (an email, a technical
 explanation, a personal essay) scores inside the human range for Binoculars, so a human-side reading is weaker evidence than a
 machine-side one.
