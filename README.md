@@ -32,18 +32,19 @@ No API keys, no uploads, nothing leaves your machine. The installer assumes noth
 ```sh
 git clone https://github.com/myster-t/ai-text-detector.git
 cd ai-text-detector
-./install.sh                    # installs a Python runtime, the packages and ~35 GB of models; ends with a self-test
+./install.sh                    # installs a Python runtime, the packages and ~36 GB of current models; ends with a self-test
 ./detect essay.txt              # writes reports/essay-report.html and reports/index-report.html
 ./install.sh --older-models     # optional: the 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (~33 GB)
 ./detect essay.txt --older-models
 ```
 
-The default is a hybrid model set chosen on the 67 controls: the Binoculars paper's Falcon-7B pair for the pair-based scores
-(the best pair measured for them) and the current Qwen3.5 small base models for the token statistics (the strongest measures).
-It has no published Binoculars thresholds, so the report never says "AI" or "human" outright; it shows where the text falls
-on about thirty measures against the control texts and which of those measures separate the controls. `--older-models`
-switches every script to the original 2023 set with the paper's thresholds, which adds a Binoculars verdict line.
-`--profile latest` is the all-Qwen3.5 set. Any combination can be installed side by side.
+The default model set is chosen by a bake-off on the 67 bundled controls among current, fully open, non-gated models: the
+OLMo-3 7B base/instruct pair (Ai2, 2025-26) for the pair-based scores, the Qwen3.5 small base models for the token
+statistics, and a 2026 ModernBERT classifier as one vote. It has no published Binoculars thresholds, so the report never
+says "AI" or "human" outright; it gives a concern level from the measures that separate the controls and shows where the
+text falls on every measure. `--profile smollm3` is a light set (about 13 GB) that scores almost as well; `--older-models`
+is the original 2023 Falcon / Qwen2.5 set with the paper's thresholds; `--profile latest` is the all-Qwen3.5 set. Any
+combination can be installed side by side.
 
 `./detect` takes any number of text files and an optional `--out DIR`. The models load for the run and are released when it
 exits; nothing stays resident. The control texts are scored once per model set and cached in `controls/scores/<profile>.json`
@@ -61,10 +62,11 @@ The models are the cost. They are downloaded once into `./models` (or wherever `
 | What | Size on disk |
 | --- | ---: |
 | Python environment (`.venv`, PyTorch and Transformers) | about 3 GB |
-| default set (`hybrid`): Falcon-7B, Falcon-7B-Instruct, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | 35 GB |
-| `--older-models` set (`original`): Falcon-7B, Falcon-7B-Instruct, Qwen2.5-1.5B, GPT-2 | 33 GB (4 GB beyond the default; the Falcon pair is shared) |
-| `--profile latest`: Qwen3.5-9B-Base, Qwen3.5-9B, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | 45 GB (39 GB beyond the default) |
-| All three | 82 GB |
+| default set (`olmo3`): Olmo-3-1025-7B, Olmo-3-7B-Instruct, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base, ModernBERT classifier | 36 GB |
+| `--profile smollm3` (light): SmolLM3-3B-Base, SmolLM3-3B, the same small models and classifier | 13 GB |
+| `--profile latest`: Qwen3.5-9B-Base, Qwen3.5-9B, the same small models and classifier | 45 GB |
+| `--older-models` (`original`): Falcon-7B, Falcon-7B-Instruct, Qwen2.5-1.5B, GPT-2 | 33 GB |
+| Everything | about 120 GB |
 
 The installer checks free space at the models location before downloading. To put the models on another disk:
 
@@ -116,14 +118,16 @@ The rendered reports for both controls are in [`examples/`](examples/).
 ## Model profiles
 
 `profiles.json` defines the model sets. `./detect`, `./install.sh` and `./uninstall.sh` take `--profile NAME`;
-`--older-models` is shorthand for `--profile original`, and no flag means `hybrid`.
+`--older-models` is shorthand for `--profile original`, and no flag means `olmo3`.
 
 | Profile | Binoculars pair | Perplexity models | Thresholds |
 | --- | --- | --- | --- |
-| `hybrid` (default) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; reports give no verdict |
-| `latest` | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; all-Qwen3.5 option |
+| `olmo3` (default) | allenai/Olmo-3-1025-7B, Olmo-3-7B-Instruct | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; best current pair measured |
+| `smollm3` (light) | HuggingFaceTB/SmolLM3-3B-Base, SmolLM3-3B | same | none; 13 GB in total |
+| `latest` | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | same | none; all-Qwen3.5 option |
+| `hybrid` | tiiuae/falcon-7b, falcon-7b-instruct | same | none; 2023 pair with current small models |
 | `original` (`--older-models`) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen2.5-1.5B, GPT-2 | the paper's; reports state a verdict |
-| `falcon3` | tiiuae/Falcon3-7B-Base, Falcon3-7B-Instruct | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; bake-off candidate, measured worse than both (see below) |
+| `falcon3` | tiiuae/Falcon3-7B-Base, Falcon3-7B-Instruct | same | none; bake-off candidate, measured worse (see below) |
 | `dev` | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | GPT-2 | none; small models for working on the report itself, not a detector |
 
 Binoculars' published thresholds were derived for the Falcon pair and mean nothing for any other, so the default profile
@@ -298,29 +302,23 @@ your own you can derive thresholds for any pair and add them to `profiles.json`.
 For perplexity, a stronger model lowers every text's perplexity; what matters is the gap between the file and the controls,
 which the reports show side by side.
 
-### Measured: original vs latest on the 67 controls (October 2026, Apple M5 Max)
+### Measured: pair bake-off on the 67 controls (October 2026, Apple M5 Max)
 
-| | `original` (Falcon-7B pair, 2023) | `latest` (Qwen3.5-9B pair, 2026) | `falcon3` (Falcon3-7B pair, 2024) |
-| --- | --- | --- | --- |
-| Binoculars AUC on the 67 controls | 0.80 | 0.62 | 0.60 |
-| Fast-DetectGPT AUC | 0.79 | 0.60 | 0.58 |
-| Alignment imprint AUC | 0.79 | 0.59 | 0.80 |
-| Best single-model statistic (AUC) | entropy 0.91 (Qwen2.5-1.5B) | surprisal spread 0.96 (Qwen3.5-2B-Base) | same small models as `latest` |
+AUC of each pair-based score alone (human direction) with the same Qwen3.5 small models for everything else:
 
-Newer is not better for the pair-based scores: both 2024-2026 pairs leave almost no room between the groups, and the
-Falcon3 pair (same family as the paper's pair, one generation on) does no better than Qwen3.5. Newer *is* better for the
-single-model statistics, which are the strongest measures under every profile. If you want the best pair-based scores and
-the best single-model statistics in one run, a hybrid profile is one line in `profiles.json`: the original Falcon-7B pair as
-observer/performer with the Qwen3.5 small models for the token statistics (both model sets must be installed). Remove the
-bake-off models with `./uninstall.sh --profile falcon3`.
+| Observer / performer pair | Year | Binoculars | Fast-DetectGPT | Alignment imprint | Download |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **OLMo-3-7B base / instruct** (default) | 2025-26 | **0.83** | 0.76 | 0.83 | 29 GB |
+| SmolLM3-3B base / instruct (light) | 2025 | 0.81 | **0.79** | **0.90** | 12 GB |
+| Falcon-7B / Falcon-7B-Instruct (the paper's pair) | 2023 | 0.80 | 0.79 | 0.79 | 29 GB |
+| Qwen3.5-9B-Base / Qwen3.5-9B | 2026 | 0.62 | 0.60 | 0.59 | 39 GB |
+| Falcon3-7B base / instruct | 2024 | 0.60 | 0.58 | 0.80 | 30 GB |
 
-That is why the default is the hybrid: the Falcon pair for Binoculars, Fast-DetectGPT and the alignment imprint, and
-the Qwen3.5 small models for everything token-level. Its control cache was assembled from the two measured runs (pair
-scores from `original`, token statistics from `latest`), so it needed no extra pass. The published thresholds still are
-not drawn under it, because they were set for a different perplexity model and a different control set.
-The practical lesson from both profiles is the same: polished Claude output in formal registers (an email, a technical
-explanation, a personal essay) scores inside the human range for Binoculars, so a human-side reading is weaker evidence than a
-machine-side one.
+The single-model token statistics (surprisal spread 0.96, entropy 0.94, log-rank ratio 0.93, perplexity 0.92 from
+Qwen3.5-2B-Base) and the classifier (0.91) do not depend on the pair and stay the strongest measures under every profile.
+Two current open pairs match or beat the 2023 reference pair while the two other current pairs are near chance, so the
+pair has to be chosen empirically, not by model age. New fully open pairs should be baked off the same way (one
+`profiles.json` entry, one control pass) and promoted when they win.
 
 ## Why machine text can score "human", and which measures to trust
 

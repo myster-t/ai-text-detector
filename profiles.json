@@ -1,6 +1,40 @@
 {
+  "olmo3": {
+    "description": "Default since 2026-10-15. OLMo-3 7B base (Olmo-3-1025-7B) / Olmo-3-7B-Instruct (Ai2, 2025-26, Apache 2.0, fully open training data) as observer/performer: Binoculars AUC 0.83 and Fast-DetectGPT 0.76 on the 67 controls, the best current pair measured; Qwen3.5 small base models for the token statistics; 2026 ModernBERT classifier as one vote. No published thresholds, so no verdict line.",
+    "observer": "allenai/Olmo-3-1025-7B",
+    "performer": "allenai/Olmo-3-7B-Instruct",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen3.5-2B-Base",
+        "Qwen3.5-2B-Base"
+      ],
+      [
+        "Qwen/Qwen3.5-0.8B-Base",
+        "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
+  },
+  "smollm3": {
+    "description": "Light set: SmolLM3-3B base/instruct (Hugging Face, 2025, Apache 2.0), about 13 GB with the Qwen3.5 small models. Binoculars AUC 0.81, Fast-DetectGPT 0.79, alignment imprint 0.90 on the 67 controls; nearly as good as olmo3 at a third of the download.",
+    "observer": "HuggingFaceTB/SmolLM3-3B-Base",
+    "performer": "HuggingFaceTB/SmolLM3-3B",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen3.5-2B-Base",
+        "Qwen3.5-2B-Base"
+      ],
+      [
+        "Qwen/Qwen3.5-0.8B-Base",
+        "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
+  },
   "latest": {
-    "description": "Default: current-generation models only (Qwen3.5, 2026) plus the 2026 ModernBERT classifier. The 9B pair is weak for Binoculars / Fast-DetectGPT on the controls (AUC about 0.6); the small base models carry the strongest token statistics and the combined score leans on those.",
+    "description": "All-Qwen3.5 set (2026). Its 9B pair is near chance for Binoculars / Fast-DetectGPT on the 67 controls (AUC 0.62 / 0.60); the small base models carry the strongest token statistics. Kept for comparison.",
     "observer": "Qwen/Qwen3.5-9B-Base",
     "performer": "Qwen/Qwen3.5-9B",
     "perplexity_models": [
@@ -52,19 +86,6 @@
     "threshold_low_fpr": 0.8536432310785527,
     "classifier": "tabularisai/ai-text-detection"
   },
-  "dev": {
-    "description": "Development profile: small local models only, for fast iteration on the report. Not a detector recommendation.",
-    "observer": "Qwen/Qwen3.5-2B-Base",
-    "performer": "Qwen/Qwen3.5-0.8B-Base",
-    "perplexity_models": [
-      [
-        "openai-community/gpt2",
-        "GPT-2"
-      ]
-    ],
-    "calibrated": false,
-    "classifier": "tabularisai/ai-text-detection"
-  },
   "falcon3": {
     "description": "Bake-off candidate: Falcon3-7B base/instruct (2024, Apache 2.0) as observer/performer, with the default profile's small Qwen3.5 base models for token statistics. Uncalibrated.",
     "observer": "tiiuae/Falcon3-7B-Base",
@@ -82,35 +103,14 @@
     "calibrated": false,
     "classifier": "tabularisai/ai-text-detection"
   },
-  "smollm3": {
-    "description": "Bake-off candidate: SmolLM3-3B base/instruct (Hugging Face, 2025, Apache 2.0) as observer/performer, Qwen3.5 small models for token statistics.",
-    "observer": "HuggingFaceTB/SmolLM3-3B-Base",
-    "performer": "HuggingFaceTB/SmolLM3-3B",
+  "dev": {
+    "description": "Development profile: small local models only, for fast iteration on the report. Not a detector recommendation.",
+    "observer": "Qwen/Qwen3.5-2B-Base",
+    "performer": "Qwen/Qwen3.5-0.8B-Base",
     "perplexity_models": [
       [
-        "Qwen/Qwen3.5-2B-Base",
-        "Qwen3.5-2B-Base"
-      ],
-      [
-        "Qwen/Qwen3.5-0.8B-Base",
-        "Qwen3.5-0.8B-Base"
-      ]
-    ],
-    "calibrated": false,
-    "classifier": "tabularisai/ai-text-detection"
-  },
-  "olmo3": {
-    "description": "Bake-off candidate: OLMo-3 7B base (Olmo-3-1025-7B) / Olmo-3-7B-Instruct (Ai2, 2025-26, Apache 2.0, fully open training data) as observer/performer, Qwen3.5 small models for token statistics.",
-    "observer": "allenai/Olmo-3-1025-7B",
-    "performer": "allenai/Olmo-3-7B-Instruct",
-    "perplexity_models": [
-      [
-        "Qwen/Qwen3.5-2B-Base",
-        "Qwen3.5-2B-Base"
-      ],
-      [
-        "Qwen/Qwen3.5-0.8B-Base",
-        "Qwen3.5-0.8B-Base"
+        "openai-community/gpt2",
+        "GPT-2"
       ]
     ],
     "calibrated": false,
