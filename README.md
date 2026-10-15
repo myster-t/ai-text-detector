@@ -217,8 +217,9 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 - Every measurement for the file and every control in a collapsed table (click to open), and a methods and limits section.
 - The index page lists all files, the control table, and a ranking of all measures by how well they separate the controls.
 
-The report is a single self-contained HTML file (no scripts, fonts or external assets), prints to A4, and renders in light
-and dark mode; a run over ten texts is a few megabytes.
+The report is a single self-contained HTML file (no fonts or external assets; a few lines of inline script only to
+expand a section when you navigate to it), prints to A4, and renders in light and dark mode; a run over ten texts is a few
+megabytes.
 
 ## Layout
 

@@ -334,7 +334,7 @@ details.sec summary{cursor:pointer;list-style:none;margin:18px 0 8px}details.sec
 td.side-h{color:var(--ok);font-weight:600}td.side-m{color:var(--bad);font-weight:600}td.side-w{color:var(--mut)}
 nav.top{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--rule);padding:8px 16px;display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.86rem}nav.top a{text-decoration:none}nav.top a:hover{text-decoration:underline}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--mut)}.dot.ok{background:var(--hum)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--mach)}
-section.file{margin-top:28px;border-top:3px solid var(--rule);padding-top:8px}section.file>details>summary{cursor:pointer;list-style:none;padding:10px 0}section.file>details>summary::-webkit-details-marker{display:none}section.file>details>summary h1{display:inline;font-size:1.35rem;margin:0 10px 0 0}section.file>details>summary::before{content:"▸ ";color:var(--mut)}section.file>details[open]>summary::before{content:"▾ "}
+section.file{margin-top:28px;border-top:3px solid var(--rule);padding-top:8px;scroll-margin-top:64px}#overview{scroll-margin-top:64px}section.file>details>summary{cursor:pointer;list-style:none;padding:10px 0}section.file>details>summary::-webkit-details-marker{display:none}section.file>details>summary h1{display:inline;font-size:1.35rem;margin:0 10px 0 0}section.file>details>summary::before{content:"▸ ";color:var(--mut)}section.file>details[open]>summary::before{content:"▾ "}
 details.all summary{cursor:pointer;list-style:none}details.all summary h2{display:inline-block;margin-top:38px}details.all summary::-webkit-details-marker{display:none}details.all summary h2::before{content:"▸ ";color:var(--mut)}details.all[open] summary h2::before{content:"▾ "}
 .pkey{display:flex;flex-wrap:wrap;gap:10px 18px;margin:8px 0 14px;font-size:.86rem}.pkey span{display:inline-flex;align-items:center;gap:7px}.kb{display:inline-block;width:26px;height:16px;border-radius:4px;border:2px solid var(--rule);background:var(--panel)}
 .kb.h{border-color:var(--hum)}.kb.m{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}.kb.w{border-style:dashed;border-color:var(--mut);filter:saturate(.15)}
@@ -540,6 +540,15 @@ hdr = f"<tr><th>File</th><th class=n>Words</th><th class=n>Binoculars</th><th>Ve
 idx_rows = "".join(f"<tr><td><a href='#{sid_of(n)}'>{esc(n)}</a></td><td class=n>{w}</td><td class='n {cls_b(b)}'>{b:.3f}</td><td>{esc(v)}</td><td class=n>{fd:.2f}</td>{''.join(f'<td class=n>{fmt(x)}</td>' for x in pp)}<td class=n>{fmt(sd)}</td><td class=n>{ss}</td><td>{esc(us)}{(' (' + str(uh + um) + ')') if us != 'clean' else ''}</td></tr>" for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows)
 ctrl_rows = "".join(f"<tr><td class=mut>control ({'human' if is_human[c.resolve()] else 'machine'}): {esc(c.name)}</td><td class=n>{len(texts[c.resolve()].split())}</td><td class='n {cls_b(bino_res[c.resolve()][0])}'>{bino_res[c.resolve()][0]:.3f}</td><td></td><td class=n>{bino_res[c.resolve()][2]:.2f}</td>{''.join(f'<td class=n>{fmt(lm[(c.resolve(), l)][chr(112)+chr(112)+chr(108)])}</td>' for l in PPL_LABELS)}<td class=n>{fmt(sent_ppl[c.resolve()]['sd'])}</td><td class=n>{style_res[c.resolve()].get('score')}</td><td>{esc(uni_res[c.resolve()]['status'])}</td></tr>" for c in CONTROLS)
 sep_rows = "".join(f"<tr><td>{esc(grp)}</td><td>{esc(title)}</td><td class=n>{separation(k):.2f}</td><td>{'higher' if hih else ('lower' if hih is False else 'no claim')}</td></tr>" for grp, k, title, hih, _, _, _ in sorted(MEAS, key=lambda m: -(separation(m[1]) if separation(m[1]) == separation(m[1]) else 0)))
+NAV_JS = '''<script>
+(function(){
+  function openFor(id){var el=id&&document.getElementById(id);if(!el)return;var d=el.querySelector('details');if(d&&!d.open)d.open=true;el.scrollIntoView({block:'start'});}
+  function fromHash(){openFor(decodeURIComponent((location.hash||'').slice(1)));}
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){a.addEventListener('click',function(){setTimeout(function(){openFor(a.getAttribute('href').slice(1));},0);});});
+  window.addEventListener('hashchange',fromHash);if(location.hash)setTimeout(fromHash,50);
+  document.querySelectorAll('section.file>details').forEach(function(d){d.addEventListener('toggle',function(){});});
+})();
+</script>'''
 out_file.write_text(f"""<!DOCTYPE html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>{esc(_stamp[:6])} AI report {esc(_name)}</title><style>{CSS}</style></head><body>
 <nav class=top><a href="#overview"><b>Overview</b></a>{nav}</nav><main>
 <section id="overview"><h1>AI text report</h1><p class=by>{len(targets)} {'texts' if len(targets) != 1 else 'text'} · run {esc(now)} {esc(_stamp[-4:-2])}:{esc(_stamp[-2:])} · profile <b>{esc(args.profile)}</b>{'' if CAL else ' (uncalibrated: no thresholds, no verdicts)'} · {esc(model_line)} · all local · this file is self-contained</p>
@@ -552,7 +561,7 @@ out_file.write_text(f"""<!DOCTYPE html><html lang=en><head><meta charset=utf-8><
 <div class=wrap><table><tr><th>Group</th><th>Measure</th><th class=n>AUC</th><th>Human side</th></tr>{sep_rows}</table></div></details>
 </section>
 {''.join(sections)}
-</main></body></html>""")
+</main>{NAV_JS}</body></html>""")
 
 if args.selftest:
     ah, aa = ANCHOR_H.resolve(), ANCHOR_A.resolve()
