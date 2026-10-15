@@ -29,12 +29,14 @@ cd ai-text-detector
 ```
 
 The default is the current-generation model set (Qwen3.5, 2026). It has no published Binoculars thresholds, so the report
-never says "AI" or "human" outright; it shows where the text falls on about thirty measures against 21 control texts and
+never says "AI" or "human" outright; it shows where the text falls on about thirty measures against 67 control texts and
 which of those measures separate the controls. `--older-models` switches every script to the original Falcon-7B pair
 with the paper's thresholds, which adds a Binoculars verdict line. Both sets can be installed side by side.
 
 `./detect` takes any number of text files and an optional `--out DIR`. The models load for the run and are released when it
-exits; nothing stays resident. Everything lives inside the checkout (`.venv/`, `models/`), so deleting the folder removes it all.
+exits; nothing stays resident. The control texts are scored once per model set and cached in `controls/scores/<profile>.json`
+(committed to the repo, keyed by each control's text hash and the profile's model names), so a normal run scores only your
+files; a control is re-scored only when its text or the model set changes, or when you pass `--rescore-controls`. Everything lives inside the checkout (`.venv/`, `models/`), so deleting the folder removes it all.
 
 Requirements: macOS or Linux (Windows via WSL2) and a machine with 32 GB or more of memory for the 7B to 9B model pairs
 (Apple Silicon or an NVIDIA GPU; CPU works but is slow). A run on an Apple M5 Max takes two to three minutes, most of it
@@ -71,7 +73,7 @@ Nothing is installed outside the checkout except uv itself (in `~/.local/bin`), 
 
 ## Expected results
 
-Every run re-scores 21 bundled controls (9 human, 12 machine; see [`controls/README.md`](controls/README.md)) with the same
+Every run re-scores 67 bundled controls (35 human, 32 machine; see [`controls/README.md`](controls/README.md)) with the same
 models as your file, and every report draws your file among them on every measure. The two anchor controls score like this
 under the `--older-models` set, the only one with published thresholds:
 
@@ -141,7 +143,7 @@ any other pair; the installer, runner and uninstaller all read the same file, so
   hidden or non-standard character shown as a red code-point badge in place, and mixed-script words outlined. The pattern
   and hidden-character tables below it give positions and context.
 - A sentence-by-sentence perplexity table with bars, showing where a text is unusually predictable.
-- Every measurement for the file and every control, and a methods and limits section.
+- Every measurement for the file and every control in a collapsed table (click to open), and a methods and limits section.
 - The index page lists all files, the control table, and a ranking of all measures by how well they separate the controls.
 
 Reports are self-contained HTML (no scripts, fonts or external assets), print to A4, and render in light and dark mode.
@@ -221,17 +223,19 @@ your own you can derive thresholds for any pair and add them to `profiles.json`.
 For perplexity, a stronger model lowers every text's perplexity; what matters is the gap between the file and the controls,
 which the reports show side by side.
 
-### Measured: original vs latest on the 21 controls (October 2026, Apple M5 Max)
+### Measured: original vs latest on the 67 controls (October 2026, Apple M5 Max)
 
 | | `original` (Falcon-7B pair, 2023) | `latest` (Qwen3.5-9B pair, 2026) |
 | --- | --- | --- |
-| Human controls, Binoculars range (mean) | 0.900 to 1.010 (0.964) | 0.898 to 1.098 (0.991) |
-| Machine controls, Binoculars range (mean) | 0.513 to 0.993 (0.777) | 0.754 to 1.040 (0.918) |
-| Gap between group means | 0.187 | 0.073 |
-| Machine controls scoring inside the human range | 3 of 12 (all Claude 2026: business email, personal essay, technical explainer) | 7 of 12 (those three plus the Claude marketing paragraph and three ChatGPT answers) |
+| Binoculars AUC on the 67 controls | 0.80 | 0.62 |
+| Fast-DetectGPT AUC | 0.79 | 0.60 |
+| Best single-model statistic (AUC) | entropy 0.91 | surprisal spread 0.96 |
 
-Newer is not better here. The 2026 pair leaves less room between the groups and lets more machine text through, which
-matches a known weakness of the method: as base models train on more synthetic text, machine prose stops surprising them.
+Newer is not better for the pair-based scores: the 2026 pair leaves almost no room between the groups. It is better for the
+single-model statistics, which are the strongest measures under either profile. The pair choice is a known lever (see the
+next section), and candidate pairs can be tried by adding a profile; the Falcon3-7B pair is included as `falcon3` for that
+purpose.
+
 Even so, `latest` is the default since October 2026: the original pair's advantage is its calibrated verdict line, and
 that line is only meaningful for 2023-era generators; for current text the report's value is the control comparison on
 every measure, which the newer small base model does better (see the next section), and newer models keep arriving.
@@ -263,8 +267,9 @@ in this repo's controls:
 - **Binoculars normalises away part of the signal when the pair agrees too much.** The score is performer perplexity divided
   by observer-performer cross-perplexity. If the observer and performer make nearly the same predictions (a 2026 base model
   and its own instruct version, trained on overlapping synthetic data), cross-perplexity tracks perplexity and the ratio
-  compresses toward 1 for every text, human or machine. That is what the `latest` profile measures: the raw perplexity of
-  Qwen3.5-2B-Base separates the controls with AUC 0.97 while the Qwen3.5-9B Binoculars ratio reaches only 0.78. Independent
+  compresses toward 1 for every text, human or machine. That is what the `latest` profile measures on the 67 controls: the
+  surprisal statistics of Qwen3.5-2B-Base separate them with AUC 0.92 to 0.96 while the Qwen3.5-9B Binoculars ratio
+  reaches only 0.62 and Fast-DetectGPT 0.60, close to chance. Independent
   measurements agree that the pair matters more than the statistic: Binoculars on a Qwen3-4B pair scored at chance (0.51)
   where a Gemma pair scored 0.93 ([arXiv:2610.15870](https://arxiv.org/abs/2610.15870)), and the Fast-DetectGPT authors
   report a Llama-3-8B base/instruct pair "substantially" beating the Falcon pair (repository README, January 2026). The
@@ -275,31 +280,34 @@ in this repo's controls:
   that a model has rewritten is the hardest case of all: Binoculars' recall drops from 93.5% on direct LLM output to 15.1%
   on LLM-rewritten human text ([arXiv:2607.29539](https://arxiv.org/abs/2607.29539)).
 
-What the controls say about each measure (AUC of the measure alone, human direction; from the index page of each run):
+What the 67 controls say about each measure (AUC of the measure alone, human direction; from the index page of each run,
+October 2026):
 
-| Measure | `original` profile (Falcon pair, Qwen2.5-1.5B) | `latest` profile (Qwen3.5-9B pair, Qwen3.5-2B-Base) |
+| Measure | `original` / `--older-models` (Falcon pair, Qwen2.5-1.5B) | `latest` / default (Qwen3.5-9B pair, Qwen3.5-2B-Base) |
 | --- | ---: | ---: |
-| Surprisal spread (sd of token log-probability) | 0.89 | 0.98 |
-| Perplexity of the first small model | 0.88 | 0.97 |
-| Mean next-token entropy | 0.95 | 0.96 |
-| Mean log-rank of the actual token | 0.87 | 0.95 |
-| GLTR top-1 share / top-10 share | 0.84 / 0.83 | 0.94 / 0.92 |
-| DetectLLM log-likelihood/log-rank ratio | 0.92 | 0.94 |
-| Paragraph-length variation | 0.83 | 0.83 |
-| Perplexity shift under sentence shuffling | 0.81 | 0.83 |
-| Binoculars | 0.87 | 0.78 |
-| Sentence-length variation | 0.75 | 0.75 |
-| Fast-DetectGPT (analytic) | 0.86 | 0.73 |
-| Alignment imprint (unweighted) | 0.75 | 0.60 |
-| Burstiness | 0.68 | 0.71 |
-| Contractions per 1,000 words | 0.69 | 0.69 |
-| Lexical diversity (MATTR, MTLD, hapax) | 0.54 to 0.57 | 0.54 to 0.57 |
-| AI-ism score | 0.50 | 0.50 |
-| Em dashes per 1,000 words | 0.33 | 0.33 |
+| Surprisal spread (sd of token log-probability) | 0.89 | 0.96 |
+| Mean next-token entropy | 0.91 | 0.94 |
+| DetectLLM log-likelihood/log-rank ratio | 0.86 | 0.93 |
+| Surprisal volatility | 0.81 | 0.93 |
+| Mean log-rank of the actual token | 0.86 | 0.93 |
+| Perplexity of the first small model | 0.85 | 0.92 |
+| Perplexity shift under sentence shuffling | 0.88 | 0.91 |
+| GLTR top-1 share / top-10 share | 0.81 / 0.83 | 0.91 / 0.90 |
+| Sentence-length variation | 0.81 | 0.81 |
+| Binoculars | 0.80 | 0.62 |
+| Fast-DetectGPT (analytic) | 0.79 | 0.60 |
+| Alignment imprint (unweighted) | 0.79 | 0.59 |
+| Paragraph-length variation | 0.56 | 0.56 |
+| AI-ism score | 0.70 | 0.70 |
+| Lexical diversity (MATTR, MTLD, hapax) | 0.27 to 0.34 | 0.27 to 0.34 |
+| Em dashes per 1,000 words | 0.50 | 0.50 |
 
-Three practical conclusions. First, on this control set the cheapest signals (one forward pass of a 2B base model: perplexity,
-entropy, log-rank) beat the pair-based detectors, so the report leads with the measures that separate the controls under
-the profile you ran rather than with a fixed favourite. Second, the "machine side" of any measure is stronger evidence than
+Three practical conclusions. First, on this control set the cheapest signals (one forward pass of a 2B base model: surprisal
+spread, entropy, log-rank, perplexity) beat the pair-based detectors by a wide margin, so the report leads with the measures
+that separate the controls under the profile you ran rather than with a fixed favourite, and labels Binoculars and
+Fast-DetectGPT as weak measures when they are. The texts that defeat the pair detectors come from both ends: polished 2026
+Claude, o3 and GPT-5 essays read as human because they are not predictable to the scorer, and 2023 open-model abstracts
+(Mistral-7B, MPT-30B, Llama-2-70B, GPT-2 XL, sampled at temperature) read as human because they are *too* unpredictable. Second, the "machine side" of any measure is stronger evidence than
 the "human side", because every failure mode above pushes machine text toward the human range and almost nothing pushes
 human text toward the machine range except brevity and formula. Third, the punctuation and vocabulary tells (em dashes,
 "delve", rule-of-three lists) are near chance on these controls: Claude Fable 5.1 output in October 2026 has almost none of
@@ -317,9 +325,9 @@ The first three are implemented here in reduced form; the rest are open.
 | Perplexity under sentence shuffling, Luminol-AIDetect ([arXiv:2604.25860](https://arxiv.org/abs/2604.25860)) | added as one log ratio | the paper uses a distribution over many shuffles and density estimation; on these controls machine text loses more predictability when shuffled (AUC 0.81 to 0.83) |
 | Telescope ([arXiv:2607.04061](https://arxiv.org/abs/2607.04061)): token-repetition probability from a tiny reference model; reported to beat Binoculars on polished essays | not added | definition needs the full paper; one extra small-model pass |
 | A second observer/performer pair chosen on the controls (Gemma or Llama-3 base/instruct), MOSAIC-style ensembling ([arXiv:2409.07615](https://arxiv.org/abs/2409.07615)) | not added | needs ~16 GB more models; the evidence above says the pair choice is the single biggest lever for Binoculars and Fast-DetectGPT |
-| Conformal thresholds from the human controls; report TPR at 1% FPR ([arXiv:2505.05084](https://arxiv.org/abs/2505.05084)) | not added | needs more than 9 human controls to be meaningful |
+| Conformal thresholds from the human controls; report TPR at 1% FPR ([arXiv:2505.05084](https://arxiv.org/abs/2505.05084)) | not added | 35 human controls is still thin for a 1% false-positive bound |
 | One supervised vote: `tabularisai/ai-text-detection` (ModernBERT, 150M, MIT) | not added | strong in-distribution, collapses on 2025-26 generators in independent tests (TPR at 1% FPR 0.13 on Qwen3 text); would need a capped weight |
-| Larger, current calibration sets: `mattc95/2026-AI-DETECTOR-BENCHMARK` (MIT, 14 models, Feb 2026), `textsightai/ai-text-detection-benchmark-2026` (CC BY-SA) | not added | would lift the 21 controls to hundreds with GPT-5, Claude Opus 5 and Gemini 3 output |
+| Larger, current calibration sets: `mattc95/2026-AI-DETECTOR-BENCHMARK` (MIT, 14 models, Feb 2026), `textsightai/ai-text-detection-benchmark-2026` (CC BY-SA) | partly done | one text per model from the 2026 benchmark is in the controls; the full 500-text set would lift the control count to hundreds |
 | Adversarial harness: `raid-bench`, PADBen, released adversarial paraphrases | not added | to measure how the measures degrade under paraphrase and humanizer tools |
 | Data-derived vocabulary lists (antislop-sampler, slop-forensics) and a pure-Python pattern scorer (sloptrim) beside avoid-ai-writing | not added | the AI-ism rules scored 0.50 AUC on these controls, so better lists are the fix |
 | Hidden-character coverage audit against demarkify (Hangul fillers, tag characters, Cf/Co catch-all) and `confusable_homoglyphs` | not added | current check covers zero-width, bidi, variation selectors, tags, Cf/Co and Cyrillic/Greek/Armenian lookalikes |
@@ -392,9 +400,12 @@ scores alongside drafts, sources and the writer's history, never as a verdict on
 
 ## Controls
 
-Nine human texts (public-domain letters and memoirs from 1879 to 1914, and Reddit, finance and medical Q&A answers from the
-HC3 corpus) and twelve machine texts (ChatGPT answers from January 2023 and Claude Fable 5.1 output from October 2026 across
-five registers). Sources, licences and word counts are in [`controls/README.md`](controls/README.md). Drop your own files
+35 human texts (public-domain books, essays and letters from 1532 to 1919 across fiction, science, philosophy, memoir and
+economics; Reddit, finance, medical and open-domain Q&A answers from the HC3 corpus; arXiv abstracts from RAID) and 32
+machine texts (ChatGPT answers from January 2023; Claude Fable 5.1 output from October 2026; one text each from Claude 3.5,
+3.7, Sonnet 4 and 4.5, GPT-3.5, GPT-4o, GPT-4.1, GPT-5, GPT-5 mini, o3, DeepSeek V3, Grok 4 and Kimi K2 via the MIT-licensed
+2026 AI Detector Benchmark; Mistral-7B-Instruct, MPT-30B-Chat, Llama-2-70B-Chat and GPT-2 XL from RAID; three texts
+generated locally by Qwen3.5-9B). Sources, licences and word counts are in [`controls/README.md`](controls/README.md). Drop your own files
 into `controls/human/` or `controls/ai/` and they are included automatically.
 
 ## License

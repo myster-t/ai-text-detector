@@ -19,6 +19,7 @@ ap.add_argument("--out", default="reports", help="output folder (default: ./repo
 ap.add_argument("--profile", default=None, choices=sorted(PROFILES), help="model set by name (default: latest)")
 ap.add_argument("--older-models", action="store_true", help="use the original 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (same as --profile original)")
 ap.add_argument("--selftest", action="store_true", help="score the bundled controls and check they separate")
+ap.add_argument("--rescore-controls", action="store_true", help="ignore the cached control scores for this profile and recompute them")
 args = ap.parse_args()
 if args.older_models and args.profile and args.profile != "original": ap.error("--older-models means --profile original; drop one of them")
 args.profile = "original" if args.older_models else (args.profile or "latest")
@@ -53,11 +54,36 @@ def sentences(t): return [s for s in re.split(r"(?<=[.!?])\s+", t) if len(s.spli
 def log(msg): print(msg, file=sys.stderr, flush=True)
 NAN = float("nan")
 
+# ---- control score cache: model-based scores of the bundled controls, per profile, keyed by text hash ----
+# Controls only need re-scoring when the model set changes (or the text does). Deterministic checks are recomputed.
+import hashlib
+CACHE_VERSION = 2
+CACHE_PATH = HERE / "controls" / "scores" / f"{args.profile}.json"
+MODEL_KEY = {"observer": P["observer"], "performer": P["performer"], "perplexity_models": P["perplexity_models"]}
+def sha(t): return hashlib.sha256(t.encode("utf-8")).hexdigest()[:16]
+cache = {"version": CACHE_VERSION, "models": MODEL_KEY, "entries": {}}
+if CACHE_PATH.is_file() and not args.rescore_controls:
+    try:
+        c0 = json.loads(CACHE_PATH.read_text())
+        if c0.get("version") == CACHE_VERSION and c0.get("models") == MODEL_KEY: cache = c0
+        else: log(f"[cache] {CACHE_PATH.name} is for a different model set or format; controls will be re-scored")
+    except Exception as e: log(f"[cache] unreadable ({e}); controls will be re-scored")
+ctrl_key = {c.resolve(): f"{'human' if is_human[c.resolve()] else 'ai'}/{c.name}" for c in CONTROLS}
+def _nan(d): return {k: (NAN if v is None else v) for k, v in d.items()}
+def cached(p):
+    e = cache["entries"].get(ctrl_key.get(p)); return e if e and e.get("sha") == sha(texts[p]) else None
+need = [p for p in texts if p in ctrl_key and not cached(p)]           # controls to (re)score with the models
+to_score = targets + need
+log(f"[cache] {len(CONTROLS) - len(need)} controls loaded from {CACHE_PATH.name}; scoring {len(targets)} file(s) + {len(need)} control(s)")
+
+
 # ---- perplexity models: whole-document token statistics for every model, sentence-level for the first ----
 lm = {}; sent_ppl = {}
 for i, (mid, label) in enumerate(P["perplexity_models"]):
     log(f"[{label}] loading"); tok, m = load(mid, torch.float32 if "gpt2" in mid else torch.bfloat16)
     for p, t in texts.items():
+        if p not in to_score:
+            e = cached(p); lm[(p, label)] = dict(_nan(e["lm"][label]), tokens=[]); sent_ppl.setdefault(p, {"sent": [], **_nan(e["sent_ppl"])}); continue
         r = lmfeat.token_stats(m, tok, t, dev) or {"n": 0, "tokens": [], "ppl": NAN, "mean_logrank": NAN, "lrr": NAN, "mean_entropy": NAN, "top1": NAN, "top10": NAN, "top100": NAN, "top1000": NAN, "lp_sd": NAN, "lp_volatility": NAN, "lp_autocorr1": NAN, "late_stability": NAN}
         if i: r["tokens"] = []
         r["shuffle_ratio"] = lmfeat.shuffle_ratio(m, tok, t, dev) if i == 0 else float("nan")
@@ -86,11 +112,17 @@ def bino(t):
     # than its base observer does. Positive = the text follows the aligned model's preferences = more machine-like.
     lq_tok = logq.gather(-1, lab[..., None])[..., 0]; imprint = (lp_tok - lq_tok).mean().item()
     return lppl / xppl, lab.shape[1], fd, imprint
-bino_res = {p: bino(t) for p, t in texts.items()}
-def _bt(p):
-    """Fast-DetectGPT and imprint read from the tuple; keeps the older 3-tuple shape readable."""
-    return bino_res[p]
+bino_res = {p: (bino(t) if p in to_score else tuple(NAN if v is None else v for v in cached(p)["bino"])) for p, t in texts.items()}
 release(otok, obs, ptok, perf)
+
+# ---- write the control cache (only when something was scored) ----
+if need:
+    def _clean(d): return {k: (None if isinstance(v, float) and v != v else v) for k, v in d.items() if k != "tokens"}
+    for p in need:
+        cache["entries"][ctrl_key[p]] = {"sha": sha(texts[p]), "lm": {l: _clean(lm[(p, l)]) for l in [lb for _, lb in P["perplexity_models"]]},
+                                          "sent_ppl": {"mean": sent_ppl[p]["mean"], "sd": sent_ppl[p]["sd"]}, "bino": list(bino_res[p])}
+    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True); CACHE_PATH.write_text(json.dumps(cache, indent=1, sort_keys=True))
+    log(f"[cache] wrote {len(need)} control score(s) to {CACHE_PATH}")
 
 # ---- deterministic checks ----
 style_res = {p: style_mod.analyze(t) for p, t in texts.items()}
@@ -158,7 +190,8 @@ h1{font-size:1.75rem;margin:0 0 4px;text-wrap:balance}h2{font-size:1.25rem;margi
 .verdict{background:var(--panel);border:1px solid var(--rule);border-left:6px solid var(--link);border-radius:10px;padding:14px 18px;margin:0 0 14px}.verdict b{font-size:1.3rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}.violin{width:100%;height:auto;display:block;background:var(--panel);border:2px solid var(--rule);border-radius:8px}
 .violin.vh{border-color:var(--hum)}.violin.vm{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}
-.violin.weak{filter:saturate(.15);border-style:dashed;border-color:var(--mut)}
+.violin.weak{filter:saturate(.15);border-style:dashed;border-color:var(--mut);transition:filter .15s}.violin.weak:hover,.violin.weak:focus{filter:none}
+details.all summary{cursor:pointer;list-style:none}details.all summary h2{display:inline-block;margin-top:38px}details.all summary::-webkit-details-marker{display:none}details.all summary h2::before{content:"▸ ";color:var(--mut)}details.all[open] summary h2::before{content:"▾ "}
 .pkey{display:flex;flex-wrap:wrap;gap:10px 18px;margin:8px 0 14px;font-size:.86rem}.pkey span{display:inline-flex;align-items:center;gap:7px}.kb{display:inline-block;width:26px;height:16px;border-radius:4px;border:2px solid var(--rule);background:var(--panel)}
 .kb.h{border-color:var(--hum)}.kb.m{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}.kb.w{border-style:dashed;border-color:var(--mut);filter:saturate(.15)}
 table{border-collapse:collapse;width:100%;font-size:.86rem;line-height:1.4}th,td{border:1px solid var(--rule);padding:6px 8px;vertical-align:top;text-align:left}th{background:var(--th)}td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -291,7 +324,7 @@ for p in targets:
 <p><b>{esc(un['status'])}</b>: {un['hidden_total']} hidden or non-standard characters, {len(un['mixed_script_words'])} words mixing Latin with another script, in {un['chars']} characters. Zero-width characters, soft hyphens, bidirectional controls, variation selectors, tag characters and lookalike letters can carry watermarks or disguise text, but also arrive through ordinary copy-and-paste. They are evidence about the file, not about who wrote the words.</p>{hid_tbl}{mix_tbl}
 <h2>Sentence-level perplexity ({esc(L0)})</h2><p>Each sentence scored on its own. Wide variation between sentences (burstiness) is characteristic of human writing; generated text tends to be uniformly predictable.</p>
 <div class=wrap><table><tr><th class=n>#</th><th>Sentence</th><th class=n>Perplexity</th><th></th></tr>{sent_rows}</table></div>
-<h2>All measurements, this file and every control</h2><div class=wrap><table>{thead}{''.join(rows)}</table></div>
+<details class=all><summary><h2>All measurements, this file and every control <span class=mut>(click to show)</span></h2></summary><div class=wrap><table>{thead}{''.join(rows)}</table></div></details>
 <p class=mut>Controls are described in controls/README.md: public-domain and Creative Commons human writing from several decades and registers, and machine text from ChatGPT (2023) and Claude (2026).</p>
 <h2>Methods and limits</h2>
 <p><b>Binoculars</b> (Hans et al., ICML 2024): the text's perplexity under a performer model divided by the cross-perplexity between an observer and the performer, which normalises for prompts and topics that make text predictable for reasons other than machine generation. {'This run uses the paper&#39;s reference models and thresholds.' if CAL else 'This run uses a different model pair than the paper, so the published thresholds do not apply and none are shown; read the position relative to the controls instead.'} Input truncated to 512 tokens ({ntok} scored here).</p>

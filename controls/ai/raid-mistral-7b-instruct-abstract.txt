@@ -1,0 +1,12 @@
+In this paper, we propose an automated method to measure head overcoat thickness using deep learning. We use pre-trained Convolutional Neural Network (CNN) model called NASNet-large-decoder to perform regression task on our dataset of head overcoats' images. By fine tuning the existing architecture, we are able to achieve state-of-the-art performance in measuring head overcoat thicknesses accurately and efficiently. Our system not only provides consistent results but also eliminates subjectivity from human involvement, making it easy for farmers' decision making process. Additionally, an open-source implementation is available to serve as a toolkit which can be utilized by researcher to evaluate their models or to augment their collections.
+
+Keywords: Automated measurement, NASNet-Large-Decoder net, headovercoat thickness, precision agriculture.
+
+Introduction:
+In precision agriculture, precise measurements have vital role, so there comes the need to automate measurements for more accurate and efficient data collection. One such important measurement that needs improvement in present farming practices is head over coat thickness. Currently manual measures tend to vary depending upon several factors like observer’s experience, visibility conditions, coating density etc., resulting in low accuracy and increased time consumption.
+
+Methodology:
+To address these challenges, we propose an automatic method to measure head overcoat thickness utilizing the Deep Learning algorithm known as Convolutional Neural Network(CNN), specifically we used NASNet- Large- Decoder network (NASNET). Initially we trained NASNETnet using ImageNet dataset to get basic knowledge about image representations, where later we did transfer learning from the fully trained NASNET CNNs to train the network on our dataset. Since our dataset includes various types of crops like corn, maize, wheat, millet and rapeseed thus there was large variation across the datasets. The proposed framework uses both convolution layers along with pooling layers which are then passed through two dense networks to obtain input sizes and generate output tensor. 
+
+Results:
+We tested the performance of our work by collecting 2580 images of different varieties including hybrid and non-hybrid crops. After hyperparameter optimization on development dataset; validation set resulted an RMSE value of

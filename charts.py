@@ -18,7 +18,7 @@ def _wrap(title, n=38):
     cut = title.rfind(" ", 0, n)
     return [title[:cut], title[cut + 1:]] if cut > 10 else [title[:n], title[n:]]
 
-def violin(title, human, machine, target, higher_is_human=None, note="", log=False, fmt="{:.3g}", W=300, H=220, auc=None, side=None, cut=None):
+def violin(title, human, machine, target, higher_is_human=None, note="", log=False, fmt="{:.3g}", W=300, H=250, auc=None, side=None, cut=None):
     """Two vertical violins (human green, machine red), clipped to each group's range, with the control points, group
     medians, and the file's value as a line across both. The axis is oriented so that UP is always the human direction
     (reversed for lower-is-human measures; tick labels keep the real values). side = "human"/"machine"/None colours the
@@ -28,14 +28,14 @@ def violin(title, human, machine, target, higher_is_human=None, note="", log=Fal
     allv = [f(x) for x in hv + mv + ([tv] if tv is not None else [])]
     weak = auc is not None and auc == auc and auc < 0.7
     cls = "violin" + (" vh" if side == "human" else " vm" if side == "machine" else "") + (" weak" if weak else "")
-    lines = _wrap(title); top0 = 18 + 13 * len(lines)
+    lines = _wrap(title); top0 = 18 + 13 * len(lines); badge_y = top0 + 16
     out = [f'<svg class="{cls}" viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{esc(title)}">']
     for i, ln in enumerate(lines): out.append(f'<text x="8" y="{16 + 13 * i}" font-size="12.5" font-weight="600" font-family="{FONT}" fill="currentColor">{esc(ln)}</text>')
     if not allv: out.append(f'<text x="8" y="{top0 + 14}" font-size="11" fill="currentColor" fill-opacity=".6" font-family="{FONT}">n/a</text></svg>'); return "".join(out)
     lo, hi = min(allv), max(allv); pad = (hi - lo) * 0.10 or (abs(hi) * 0.1 or 0.5); lo, hi = lo - pad, hi + pad
     if not log and min(hv + mv + ([tv] if tv is not None else [])) >= 0: lo = max(lo, 0.0)
     flip = higher_is_human is False
-    top, bot, L, R = top0 + 8, H - 26, 56, 12
+    top, bot, L, R = badge_y + 14, H - 26, 56, 12
     Y = (lambda v: top + (f(v) - lo) / (hi - lo) * (bot - top)) if flip else (lambda v: bot - (f(v) - lo) / (hi - lo) * (bot - top))
     Yf = (lambda g: top + (g - lo) / (hi - lo) * (bot - top)) if flip else (lambda g: bot - (g - lo) / (hi - lo) * (bot - top))
     cx_h, cx_m = L + (W - L - R) * 0.3, L + (W - L - R) * 0.72; half = (W - L - R) * 0.19
@@ -43,9 +43,10 @@ def violin(title, human, machine, target, higher_is_human=None, note="", log=Fal
         out.append(f'<text x="8" y="{top0}" font-size="10" font-family="{FONT}" fill="currentColor" fill-opacity=".65">{esc(note[:50] + ("…" if len(note) > 50 else ""))}</text>')
     badge = {"human": ("human side", "var(--hum)"), "machine": ("machine side", "var(--mach)")}.get(side)
     if badge:
-        out.append(f'<rect x="{W-R-78}" y="{top0-11}" width="78" height="14" rx="7" fill="{badge[1]}"/><text x="{W-R-39}" y="{top0}" font-size="9.5" font-weight="700" text-anchor="middle" font-family="{FONT}" fill="#fff">{badge[0]}</text>')
+        out.append(f'<rect x="{W-R-84}" y="{badge_y-11}" width="84" height="15" rx="7.5" fill="{badge[1]}"/><text x="{W-R-42}" y="{badge_y}" font-size="9.5" font-weight="700" text-anchor="middle" font-family="{FONT}" fill="#fff">{badge[0]}</text>')
     elif higher_is_human is None:
-        out.append(f'<text x="{W-R}" y="{top0}" font-size="9.5" text-anchor="end" font-family="{FONT}" fill="currentColor" fill-opacity=".6">no direction claimed</text>')
+        out.append(f'<text x="{W-R}" y="{badge_y}" font-size="9.5" text-anchor="end" font-family="{FONT}" fill="currentColor" fill-opacity=".6">no direction claimed</text>')
+    if weak: out.append(f'<text x="8" y="{badge_y}" font-size="9.5" font-weight="700" font-family="{FONT}" fill="currentColor" fill-opacity=".8">weak measure here (AUC {auc:.2f})</text>')
     for i in range(5):
         v = lo + (hi - lo) * i / 4; y = Yf(v)
         lab = fmt.format(10 ** v) if log else fmt.format(v)
@@ -74,8 +75,7 @@ def violin(title, human, machine, target, higher_is_human=None, note="", log=Fal
         y = Y(tv); col = badge[1] if badge else "var(--tgt)"
         out.append(f'<line x1="{L}" y1="{y:.1f}" x2="{W-R}" y2="{y:.1f}" stroke="{col}" stroke-width="2.5" stroke-dasharray="6 3"/>'
                    f'<polygon points="{W-R-1},{y:.1f} {W-R-9},{y-5:.1f} {W-R-9},{y+5:.1f}" fill="{col}"/>'
-                   f'<text x="{W-R-12}" y="{y-5 if y-5 > top+8 else y+13:.1f}" font-size="10.5" font-weight="700" text-anchor="end" font-family="{FONT}" fill="{col}" stroke="var(--panel)" stroke-width="3" paint-order="stroke">this file {fmt.format(tv)}</text>')
-    if weak: out.append(f'<rect x="{W/2-92:.0f}" y="{top+2}" width="184" height="15" rx="7" fill="currentColor" fill-opacity=".12"/><text x="{W/2:.0f}" y="{top+13}" font-size="9.5" font-weight="700" text-anchor="middle" font-family="{FONT}" fill="currentColor" fill-opacity=".85">weak measure here (AUC {auc:.2f})</text>')
+                   f'<text x="{W-R-12}" y="{y-5 if y-5 > top+10 else y+13:.1f}" font-size="10.5" font-weight="700" text-anchor="end" font-family="{FONT}" fill="{col}" stroke="var(--panel)" stroke-width="3" paint-order="stroke">this file {fmt.format(tv)}</text>')
     out.append("</svg>"); return "".join(out)
 
 def strip(title, points, target_val, target_name, log=False, lines=(), W=860, H=96):
