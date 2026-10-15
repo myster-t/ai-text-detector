@@ -7,4 +7,4 @@ models/
 reports/
 *.html
 !examples/*.html
-.profile\n
+.profile\n.version

@@ -46,7 +46,12 @@ text falls on every measure. `--profile smollm3` is a light set (about 13 GB) th
 is the original 2023 Falcon / Qwen2.5 set with the paper's thresholds; `--profile qwen35` is the all-Qwen3.5 set. Any
 combination can be installed side by side.
 
-`./detect` takes any number of text files and an optional `--out DIR`, plus `--fast`, `--low-memory` and `--profile NAME` (see Memory). The models load for the run and are released when it
+`./detect` takes any number of text files and an optional `--out DIR`, plus `--fast`, `--low-memory` and `--profile NAME` (see Memory).
+
+To update later, run `./update.sh` inside the folder: it downloads the latest files from GitHub and copies them over this
+folder (no git needed; a git clone is pulled instead), keeps your models, Python environment, settings, reports and any
+control texts you added, then re-runs the installer, which only fetches what is newly required. `./update.sh --no-selftest`
+skips the final self-test. The models load for the run and are released when it
 exits; nothing stays resident. The control texts are scored once per model set and cached in `controls/scores/<profile>.json`
 (committed to the repo, keyed by each control's text hash and the profile's model names), so a normal run scores only your
 files; a control is re-scored only when its text or the model set changes, or when you pass `--rescore-controls`. Everything lives inside the checkout (`.venv/`, `models/`), so deleting the folder removes it all.

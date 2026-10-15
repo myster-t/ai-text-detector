@@ -84,6 +84,6 @@ PY
 # ---- self-test ------------------------------------------------------------------------------------------
 say "Self-test on the bundled controls (loads all models once; a few minutes)"
 printf '%s\n' "$PROFILE" > .profile
-./detect --selftest --profile "$PROFILE"
+if [[ "${SKIP_SELFTEST:-0}" == 1 ]]; then say "Self-test skipped (SKIP_SELFTEST=1)"; else ./detect --selftest --profile "$PROFILE"; fi
 say "Remove models later with ./uninstall.sh"
 say "Done (profile ${PROFILE} is now the default for this checkout). Score a file with:   ./detect path/to/text.txt      (reports land in ./reports)"
