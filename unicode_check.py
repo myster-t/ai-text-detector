@@ -55,6 +55,7 @@ def provenance(text):
             "curly_quotes": sum(text.count(c) for c in "\u201c\u201d\u2018\u2019"), "straight_quotes": text.count('"') + text.count("'"),
             "em_dash": text.count("\u2014"), "em_dash_spaced": text.count(" \u2014 "), "en_dash": text.count("\u2013"), "double_hyphen": text.count("--"),
             "ellipsis_char": text.count("\u2026"), "three_dots": text.count("..."), "line_sep": text.count("\u2028") + text.count("\u2029"), "soft_hyphen": text.count("\u00ad"),
-            "words": words}
+            "claude_ui_class": text.count("font-claude-response") + text.count("font-claude-"), "markdown_residue": len(re.findall(r"(?m)^\s*(?:#{1,6}\s|[-*]\s|\d+\.\s)|\*\*[^*\n]+\*\*", text)),
+            "pdf_ligatures": sum(text.count(c) for c in "\ufb00\ufb01\ufb02\ufb03\ufb04"), "words": words}
 if __name__ == "__main__":
     print(json.dumps({f: check(open(f, encoding="utf-8").read()) for f in sys.argv[1:]}, indent=1, ensure_ascii=False))

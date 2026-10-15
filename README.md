@@ -11,9 +11,12 @@ that shows where the text sits against known-human and known-machine control tex
 4. **Perplexity and burstiness** (the GPTZero family) under two language models, sentence by sentence.
 5. **Stylometry** without any model: lexical diversity (MATTR, MTLD, hapax ratio), sentence- and paragraph-length variation,
    punctuation and construction rates (em dashes, "not X, but Y", rule-of-three lists, contractions, first person).
-6. **Slop vocabulary** from data-derived lists: words, bigrams, trigrams and phrases measured as over-represented in ten
-   2025 models' essays versus human writing (slop-forensics, MIT) and in LLM fiction (antislop-sampler, Apache 2.0), as
-   rates per thousand words with every match marked in the text.
+6. **Vocabulary and construction tells, each labelled with the era it was measured in**: the 2024 PubMed excess-vocabulary
+   list (Kobak et al., MIT), the 21 "delve" words (Juzek & Ward, 2025), Wikipedia's "Signs of AI writing" core list
+   (2025-26, CC BY-SA), the slop-forensics essay lists and antislop phrase lists (Paech, 2025, MIT / Apache 2.0), and the
+   construction frames that still survive in 2026 models (corrective "not just X but Y", "rather than merely",
+   "this matters", "adds another layer"), plus punctuation diversity. Rates per thousand words, every match marked in the
+   text.
 7. **A supervised vote**: a 2026 ModernBERT classifier (MIT) trained on 11 million RAID-era texts, used as one capped vote.
 8. **Writing-pattern and hidden-character checks**: AI-isms such as "delve", "in today's fast-paced world" and
    "in conclusion" (rules from the avoid-ai-writing project), plus zero-width characters, bidi controls and lookalike letters
@@ -228,6 +231,18 @@ human writing) for single words, bigrams and trigrams, and antislop-sampler (Pae
 three construction regexes drawn from creative writing. Rates are per thousand words. On the bundled controls the essay
 word list alone separates human from machine at AUC about 0.8; the lists are vendored in `third_party/` with their licences.
 
+**Which tells are dated.** The literature is clear that the famous 2023-24 vocabulary (delve, tapestry, testament,
+"it's important to note", "In conclusion", "As of my last knowledge update", emoji bullets, "Certainly!") has been trained
+out of 2026 frontier models by 41 to 86% even while it keeps rising in published corpora written with older tools, and that
+em dashes went from a strong GPT-4.1 / Claude 4.x signature (9 to 11 per thousand words) to near zero in GPT-5.1+, Claude
+Opus 5.5 and Gemini 3.1. The surviving 2026 tells are constructions rather than words: corrective framing ("not just X but
+Y", "it's not X, it's Y", "rather than merely"), importance flagging ("this matters", "why X matters"), reframing
+transitions ("adds another layer", "looking ahead"), and syntax such as present-participial riders and nominalisations.
+Each list in this tool carries its year in the report's test table, the AUC column shows what it is worth on the controls,
+and the combined score weights it accordingly; a hit on a 2023 word is editorial evidence about register, not authorship.
+Population-level markers (Kobak, the em-dash studies) are stated by their authors not to be per-document detectors, and the
+report treats the lexical layer the same way.
+
 **Supervised classifier** (`classifier.py`): `tabularisai/ai-text-detection`, a ModernBERT-base model (149M parameters,
 MIT) fine-tuned in 2026 on about 11 million rows dominated by the 2024 RAID benchmark. Its own card reports AUROC 0.99 on
 RAID; independent tests of RAID-trained encoders show they collapse on 2025-26 generators (true-positive rate 0.13 at 1%
@@ -406,6 +421,30 @@ features (character agency, chronology, escalation, moral ambiguity) rather than
 stories. The features are extracted by an LLM, so it is not a local zero-shot method and is not added; its figure style
 (a distribution per source with the sample marked against it) is what the violin panels in this report follow.
 
+## Watermarks and provenance: what can and cannot be known locally
+
+Verified as of October 2026 (primary sources listed in References):
+
+- **Claude carries a statistical watermark, and it is undetectable here.** Anthropic announced in August 2026 that models
+  released from 2026-08-02 (the Claude 5 family, Opus and Sonnet 4.5 onward, Haiku 4.5 onward, with older models being
+  back-filled) carry a SynthID-Text-style watermark: the sampler's source of randomness is keyed, which biases word choice
+  statistically. In Anthropic's words, "nothing is added to the text and there are no hidden characters." Detection is a
+  private-preview API for regulators, researchers, educators and similar parties; there is no public checker, light edits
+  probably survive, a full rewrite removes it, and it is weak on short samples. Keyless detection methods published so far
+  need hundreds of live queries to the generating model and are not validated on production Claude, so a static-text tool
+  cannot test for it. Claims that Claude inserts zero-width or no-break characters are contradicted by Anthropic's statement
+  and by independent clipboard tests; the one real Claude-specific artifact is an HTML wrapper class
+  (`font-claude-response-body`) that survives select-and-copy into rich-text editors, which this tool now flags when it
+  appears in the input and which proves only that the text passed through the Claude interface.
+- **OpenAI**: the narrow no-break space (U+202F) episode was o3 and o4-mini in April 2025 (OpenAI called it a
+  reinforcement-learning quirk, not a watermark) and GPT-5 non-reasoning in October 2025; no verified 2026 recurrence.
+  OpenAI's own statistical watermark ("textGrain") is EU-only and off by default on the API, with no public detector.
+- **Google**: SynthID-Text is applied in the Gemini app; the public SynthID portal covers images, video and audio only.
+
+So the hidden-character check is a **pipeline** classifier: no-break spaces after sentence ends, curly quotes and the
+ellipsis character point at a word processor, a web page or a chat window as the copy source; ligatures and soft hyphens
+point at a PDF; narrow no-break spaces point at 2025-era OpenAI output. None of it identifies the author.
+
 ## Limits
 
 No detector proves authorship. Edited or paraphrased machine text can pass. Short texts, formulaic genres, lists, and text
@@ -437,6 +476,25 @@ scores alongside drafts, sources and the writer's history, never as a verdict on
   2026. [arXiv:2605.19516](https://arxiv.org/abs/2605.19516).
 - Jenna Russell, Rishanth Rajendhran, Chau Minh Pham, Mohit Iyyer, John Wieting. **StoryScope: Investigating idiosyncrasies
   in AI fiction.** 2026. [arXiv:2604.03136](https://arxiv.org/abs/2604.03136).
+- Anthropic. **How Claude's text watermark works.** 2026-08-14, updated 2026-09-01. anthropic.com/news/claude-text-watermark;
+  and support article "How Claude marks AI-generated content" (support.claude.com, article 16266773).
+- Rumi. **ChatGPT's o3 and o4-mini insert narrow no-break spaces.** 2025-04-20, with OpenAI's 2025-04-22 response (rumidocs.com).
+- Thibaud Gloaguen, Nikola Jovanović, Robin Staab, Martin Vechev. **Black-Box Detection of Language Model Watermarks.**
+  ICLR 2025. [arXiv:2405.20777](https://arxiv.org/abs/2405.20777). Keyless detection needs live model queries.
+- Sumanth Dathathri et al. **Scalable watermarking for identifying large language model outputs (SynthID-Text).** Nature, 2024.
+- Mason Freeburg. **Em-dash usage across language models.** 2026. [arXiv:2603.27006](https://arxiv.org/abs/2603.27006).
+- Dmitry Kobak, Rita González-Márquez, Emőke-Ágnes Horvát, Jan Lause. **Delving into LLM-assisted writing in biomedical
+  publications through excess vocabulary.** Science Advances 11(27), 2025. [arXiv:2406.07016](https://arxiv.org/abs/2406.07016).
+  Word list: github.com/berenslab/llm-excess-vocab (MIT), vendored in `third_party/llm-excess-vocab/`.
+- Tom S. Juzek, Zina B. Ward. **Why Does ChatGPT "Delve" So Much? Exploring the Sources of Lexical Overrepresentation in
+  Large Language Models.** COLING 2025. [arXiv:2412.11385](https://arxiv.org/abs/2412.11385).
+- Alex Reinhart et al. **Do LLMs write like humans? Variation in grammatical and rhetorical styles.** PNAS, 2025.
+  [arXiv:2410.16107](https://arxiv.org/abs/2410.16107).
+- Weixin Liang et al. **Mapping the Increasing Use of LLMs in Scientific Papers.** 2024. [arXiv:2403.07183](https://arxiv.org/abs/2403.07183).
+- WikiProject AI Cleanup. **Signs of AI writing.** Wikipedia, 2025-26, CC BY-SA 4.0.
+- Graphite / Five Percent. **AI Tells** and **Opus 5.5 update**, 2026 (graphite.io/five-percent/research); cross-generation
+  tell study; used as a reference for the 2026 construction frames, no data vendored.
+- Sam Paech. **antislop-sampler** (Apache 2.0) and **slop-forensics** (MIT), 2025. Lists vendored in `third_party/`.
 - Guangsheng Bao, Yanbin Zhao, Zhiyang Teng, Linyi Yang, Yue Zhang. **Fast-DetectGPT: Efficient Zero-Shot Detection of
   Machine-Generated Text via Conditional Probability Curvature.** ICLR 2024. [arXiv:2310.05130](https://arxiv.org/abs/2310.05130).
   Reference code: [baoguangsheng/fast-detect-gpt](https://github.com/baoguangsheng/fast-detect-gpt) (used as the

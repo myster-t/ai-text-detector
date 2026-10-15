@@ -164,6 +164,8 @@ META = {"binoculars": ("2024", "Hans et al., ICML 2024"), "fastdetectgpt": ("202
         "clf_p_ai": ("2026", "tabularisai ModernBERT on RAID (2024) data"), "aiisms": ("2025", "avoid-ai-writing, Bronsdon"),
         "slop_word_per_k": ("2025", "slop-forensics, Paech"), "slop_top300_per_k": ("2025", "slop-forensics, Paech"), "slop_ngram_per_k": ("2025", "slop-forensics, Paech"),
         "slop_phrase_per_k": ("2025", "antislop-sampler, Paech"), "slop_construction_per_k": ("2025", "antislop-sampler, Paech"),
+        "frames_2026_per_k": ("2026", "Graphite AI Tells; Wikipedia Signs of AI writing"), "kobak_per_k": ("2025", "Kobak et al., Science Advances (2024 PubMed excess words)"),
+        "juzek_per_k": ("2025", "Juzek & Ward, COLING 2025 (2023-24 era words)"), "wiki_per_k": ("2025", "Wikipedia Signs of AI writing (CC BY-SA)"), "punct_entropy": ("2026", "punctuation-monotony observation"),
         "mattr": ("2010", "Covington & McFall"), "mtld": ("2010", "McCarthy & Jarvis"), "hapax_ratio": ("classic", "lexical statistics"),
         "sent_len_cv": ("2023", "burstiness analogue"), "para_len_cv": ("2023", "burstiness analogue"), "em_dash_per_k": ("2025", "em-dash studies")}
 def meta(k):
@@ -380,9 +382,12 @@ for p in targets:
     gkey = f'<p class=legend><span class="key g0">top-1 {L["top1"]*100:.0f}%</span><span class="key g1">top-10 {(L["top10"]-L["top1"])*100:.0f}%</span><span class="key g2">top-100 {(L["top100"]-L["top10"])*100:.0f}%</span><span class="key g3">top-1000 {(L["top1000"]-L["top100"])*100:.0f}%</span><span class="key g4">beyond {(1-L["top1000"])*100:.0f}%</span> &nbsp; share in top-10, controls: human {min(hv("top10"))*100:.0f} to {max(hv("top10"))*100:.0f}%, machine {min(mv("top10"))*100:.0f} to {max(mv("top10"))*100:.0f}%</p>'
     ann, nmarks = annotate(t, st, un, slop_res[p])
     pv = un.get("provenance", {})
-    PROV = [("nbsp_after_sentence_end", "No-break space (U+00A0) directly after a sentence end", "Replaces the ordinary space after a period. Seen in text copied out of chat interfaces (ChatGPT in 2025 emitted U+00A0 / U+202F between sentences) and in some word processors; a human typing in a plain editor produces none."),
-            ("nbsp", "No-break spaces (U+00A0), total", "Word processors insert them around numbers and units; chat and web copies scatter them more widely."),
-            ("narrow_nbsp", "Narrow no-break spaces (U+202F)", "Rare in typed text; the specific character ChatGPT inserted in spring 2025, and French-style punctuation spacing."),
+    PROV = [("nbsp_after_sentence_end", "No-break space (U+00A0) directly after a sentence end", "Replaces the ordinary space after a period. Low-confidence pipeline signal: HTML, Word or Pages paste, or 2025-era ChatGPT (o3) output; a human typing in a plain editor produces none. Not a Claude signal: Anthropic states its models add no hidden characters."),
+            ("nbsp", "No-break spaces (U+00A0), total", "Word processors insert them around numbers and units; HTML and web copies scatter them more widely."),
+            ("narrow_nbsp", "Narrow no-break spaces (U+202F)", "Rare in typed English. Verified as the character OpenAI's o3 / o4-mini inserted in April 2025 (OpenAI: a reinforcement-learning quirk, not a watermark) and GPT-5 non-reasoning in October 2025; also French and scientific typesetting."),
+            ("claude_ui_class", "Claude web-app wrapper class (font-claude-*) in pasted HTML", "Only survives a select-and-copy from the Claude app into a rich-text editor; means the text passed through the Claude UI (written or merely proofread there), never a watermark."),
+            ("markdown_residue", "Markdown residue (headings, bullets, **bold**) in plain text", "Chat apps' copy buttons (Claude, ChatGPT, Perplexity) emit raw Markdown as plain text."),
+            ("pdf_ligatures", "Typographic ligatures (fi, fl, ff)", "Left by PDF text extraction."),
             ("zero_width", "Zero-width characters", "Invisible; used by some watermarking and copy-tracking schemes, and left by some editors."),
             ("curly_quotes", "Curly quotes", "Word processors and chat interfaces convert to curly quotes; plain editors, code editors and many web forms keep straight ones."),
             ("straight_quotes", "Straight quotes", ""),
@@ -393,7 +398,9 @@ for p in targets:
     prov_rows = "".join(f"<tr><td>{esc(lab)}</td><td class=n>{pv.get(k, 0)}</td><td class=mut>{esc(why)}</td></tr>" for k, lab, why in PROV if pv.get(k, 0) or k in ("nbsp_after_sentence_end", "curly_quotes", "straight_quotes", "em_dash"))
     hints = []
     if pv.get("nbsp_after_sentence_end", 0): hints.append(f"{pv['nbsp_after_sentence_end']} no-break space(s) sit directly after sentence ends, a pattern typical of text copied from a chat window or a word processor rather than typed into a plain editor")
-    if pv.get("narrow_nbsp", 0): hints.append("narrow no-break spaces are present, the character ChatGPT emitted in spring 2025")
+    if pv.get("narrow_nbsp", 0): hints.append("narrow no-break spaces are present, the character OpenAI's o3 / o4-mini emitted in April 2025 and GPT-5 (non-reasoning) in October 2025")
+    if pv.get("claude_ui_class", 0): hints.append("the Claude web app's response wrapper class is present, so this text was pasted as rich text from the Claude interface")
+    if pv.get("markdown_residue", 0) >= 3: hints.append(f"{pv['markdown_residue']} Markdown markers (headings, bullets, bold) survive in plain text, typical of a chat app's copy button")
     if pv.get("curly_quotes", 0) and not pv.get("straight_quotes", 0): hints.append("quotes are all curly, so the text passed through software that typesets quotes (word processor, chat interface, or a style-aware editor)")
     if pv.get("em_dash", 0) and not pv.get("double_hyphen", 0): hints.append(f"{pv['em_dash']} true em dash(es) and no typed double hyphens")
     prov_txt = ("Observed: " + "; ".join(hints) + ".") if hints else "Nothing beyond ordinary typed text was observed."
@@ -432,6 +439,7 @@ for p in targets:
 <p>Deterministic rules from the <a href="https://github.com/conorbronsdon/avoid-ai-writing">avoid-ai-writing</a> detector (Conor Bronsdon, MIT): vocabulary tiers, transitions, template phrases, chatbot artifacts, generic conclusions, hedging, formatting and rhythm signals. Control range: human {min(style_res[c].get('score', 0) for c in HC)} to {max(style_res[c].get('score', 0) for c in HC)}, machine {min(style_res[c].get('score', 0) for c in MC)} to {max(style_res[c].get('score', 0) for c in MC)}. These describe how the text reads and are useful for editing; they are weak evidence of authorship on their own.</p>{style_tbl}
 <h3>Provenance signals (where the text was composed or copied from)</h3>
 <p>Counts only; they say nothing about authorship by themselves. {prov_txt}</p>
+<p class=mut>On watermarks: Anthropic states that Claude models released from August 2026 carry a statistical SynthID-Text-style watermark in word choice that adds nothing to the text and has no public detector; OpenAI announced a similar EU-only scheme in October 2026; Google's SynthID-Text is applied in the Gemini app, with a public portal for images, video and audio only. None of these can be detected from static text without the vendor's key, so this report makes no watermark claim; hidden characters, when found, point at the copy pipeline or at 2025-era OpenAI output, not at Claude.</p>
 <div class=wrap><table><tr><th>Signal</th><th class=n>Count</th><th>What it usually means</th></tr>{prov_rows}</table></div>
 <h3>Hidden characters and mixed scripts</h3>
 <p><b>{esc(un['status'])}</b>: {un['hidden_total']} hidden or non-standard characters, {len(un['mixed_script_words'])} words mixing Latin with another script, in {un['chars']} characters. Zero-width characters, soft hyphens, bidirectional controls, variation selectors, tag characters and lookalike letters can carry watermarks or disguise text, but also arrive through ordinary copy-and-paste. They are evidence about the file, not about who wrote the words.</p>{hid_tbl}{mix_tbl}
