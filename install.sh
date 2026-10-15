@@ -62,7 +62,7 @@ import os, json
 from huggingface_hub import snapshot_download
 P = json.load(open("profiles.json"))[os.environ["PROFILE"]]
 patterns = ["*.safetensors", "*.json", "*.txt", "tokenizer*", "*.jinja"]
-MODELS = {m: patterns for m in [P["observer"], P["performer"]] + [m for m, _ in P["perplexity_models"]]}
+MODELS = {m: patterns for m in [P["observer"], P["performer"]] + [m for m, _ in P["perplexity_models"]] + ([P["classifier"]] if P.get("classifier") else [])}
 for repo, patterns in MODELS.items():
     try:
         snapshot_download(repo, allow_patterns=patterns, local_files_only=True); print(f"  {repo}: present"); continue

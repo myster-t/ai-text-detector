@@ -30,7 +30,7 @@ elif [[ -n "$PROFILE" ]]; then
   PROFILE="$PROFILE" HF_HOME="$MODELS_DIR" DRY="$DRY" .venv/bin/python - <<'PY'
 import os, json, pathlib, shutil
 profiles = json.load(open("profiles.json")); name = os.environ["PROFILE"]; hub = pathlib.Path(os.environ["HF_HOME"]) / "hub"
-def repos(p): return {p["observer"], p["performer"], *[m for m, _ in p["perplexity_models"]]}
+def repos(p): return {p["observer"], p["performer"], *[m for m, _ in p["perplexity_models"]], *([p["classifier"]] if p.get("classifier") else [])}
 mine = repos(profiles[name]); others = set().union(*(repos(p) for n, p in profiles.items() if n != name)) if len(profiles) > 1 else set()
 victims = mine - others; kept = mine & others
 def repo_dir(r): return hub / ("models--" + r.replace("/", "--"))

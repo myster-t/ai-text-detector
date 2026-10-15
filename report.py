@@ -152,7 +152,10 @@ bino_res = {p: (pair_new[p] if p in to_score else tuple(NAN if v is None else v 
 # ---- supervised classifier (optional, one vote) ----
 clf_res = {}
 if CLF:
-    log(f"[classifier] loading {CLF}"); ctok, cm = classifier.load(CLF, dev)
+    try: ctok, cm = classifier.load(CLF, dev); log(f"[classifier] loaded {CLF}")
+    except Exception as e:
+        log(f"[classifier] {CLF} is not installed locally ({type(e).__name__}); skipping it. Run ./install.sh again to fetch it."); CLF = None
+if CLF:
     for p, t in texts.items():
         if p in to_score or p in need_clf: clf_res[p] = classifier.p_ai(cm, ctok, t, dev)
         else: clf_res[p] = cached(p).get("clf", NAN) if cached(p) else NAN
