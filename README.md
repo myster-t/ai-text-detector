@@ -43,7 +43,7 @@ OLMo-3 7B base/instruct pair (Ai2, 2025-26) for the pair-based scores, the Qwen3
 statistics, and a 2026 ModernBERT classifier as one vote. It has no published Binoculars thresholds, so the report never
 says "AI" or "human" outright; it gives a concern level from the measures that separate the controls and shows where the
 text falls on every measure. `--profile smollm3` is a light set (about 13 GB) that scores almost as well; `--older-models`
-is the original 2023 Falcon / Qwen2.5 set with the paper's thresholds; `--profile latest` is the all-Qwen3.5 set. Any
+is the original 2023 Falcon / Qwen2.5 set with the paper's thresholds; `--profile qwen35` is the all-Qwen3.5 set. Any
 combination can be installed side by side.
 
 `./detect` takes any number of text files and an optional `--out DIR`. The models load for the run and are released when it
@@ -64,7 +64,7 @@ The models are the cost. They are downloaded once into `./models` (or wherever `
 | Python environment (`.venv`, PyTorch and Transformers) | about 3 GB |
 | default set (`olmo3`): Olmo-3-1025-7B, Olmo-3-7B-Instruct, Qwen3.5-2B-Base, Qwen3.5-0.8B-Base, ModernBERT classifier | 36 GB |
 | `--profile smollm3` (light): SmolLM3-3B-Base, SmolLM3-3B, the same small models and classifier | 13 GB |
-| `--profile latest`: Qwen3.5-9B-Base, Qwen3.5-9B, the same small models and classifier | 45 GB |
+| `--profile qwen35`: Qwen3.5-9B-Base, Qwen3.5-9B, the same small models and classifier | 45 GB |
 | `--older-models` (`original`): Falcon-7B, Falcon-7B-Instruct, Qwen2.5-1.5B, GPT-2 | 33 GB |
 | Everything | about 120 GB |
 
@@ -77,7 +77,7 @@ The installer checks free space at the models location before downloading. To pu
 `AITD_MODELS_DIR` in the environment overrides that file. To remove what was installed:
 
 ```sh
-./uninstall.sh --profile original   # just the --older-models set (shared models are kept); --profile latest = the default set
+./uninstall.sh --profile hybrid     # one profile's models (models shared with other profiles are kept)
 ./uninstall.sh --all-models         # every model
 ./uninstall.sh --all                # models and the Python environment
 ./uninstall.sh --profile original --dry-run   # preview what a removal would free
@@ -124,7 +124,7 @@ The rendered reports for both controls are in [`examples/`](examples/).
 | --- | --- | --- | --- |
 | `olmo3` (default) | allenai/Olmo-3-1025-7B, Olmo-3-7B-Instruct | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; best current pair measured |
 | `smollm3` (light) | HuggingFaceTB/SmolLM3-3B-Base, SmolLM3-3B | same | none; 13 GB in total |
-| `latest` | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | same | none; all-Qwen3.5 option |
+| `qwen35` | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | same | none; all-Qwen3.5 option |
 | `hybrid` | tiiuae/falcon-7b, falcon-7b-instruct | same | none; 2023 pair with current small models |
 | `original` (`--older-models`) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen2.5-1.5B, GPT-2 | the paper's; reports state a verdict |
 | `falcon3` | tiiuae/Falcon3-7B-Base, Falcon3-7B-Instruct | same | none; bake-off candidate, measured worse (see below) |
@@ -292,12 +292,13 @@ and one control pass; see the bake-off table below) and promoted if it wins. Can
 SmolLM3-3B (2025), OLMo-3-7B (2025-26); gated families (Gemma, Llama) are excluded because the installer must work without
 a Hugging Face account.
 
-The defaults are deliberate. Binoculars' thresholds were derived for the Falcon-7B pair; the paper shows the method works
-with other observer/performer pairs, but each pair needs its own thresholds, derived on labelled human and machine text. A
-newer pair such as the Qwen3.5 models in the `latest` profile will likely separate current LLM output better, because newer
-post-trained models are closer to what people actually use, but without recalibration the published 0.90 / 0.85 lines mean
-nothing, which is why that profile reports positions among the controls instead of verdicts. With enough labelled text of
-your own you can derive thresholds for any pair and add them to `profiles.json`.
+Binoculars' published thresholds were derived for the Falcon-7B pair; the paper shows the method works with other
+observer/performer pairs, but each pair needs its own thresholds, derived on labelled human and machine text. A newer pair
+does not automatically separate current LLM output better: the all-Qwen3.5 `qwen35` profile is near chance on the controls
+while OLMo-3 and SmolLM3 are not (see the bake-off below). Without recalibration the published 0.90 / 0.85 lines mean
+nothing for any current pair, which is why every current profile reports positions among the controls and a concern level
+instead of a verdict. With enough labelled text of your own you can derive thresholds for any pair and add them to
+`profiles.json`.
 
 For perplexity, a stronger model lowers every text's perplexity; what matters is the gap between the file and the controls,
 which the reports show side by side.
@@ -344,7 +345,7 @@ in this repo's controls:
 - **Binoculars normalises away part of the signal when the pair agrees too much.** The score is performer perplexity divided
   by observer-performer cross-perplexity. If the observer and performer make nearly the same predictions (a 2026 base model
   and its own instruct version, trained on overlapping synthetic data), cross-perplexity tracks perplexity and the ratio
-  compresses toward 1 for every text, human or machine. That is what the `latest` profile measures on the 67 controls: the
+  compresses toward 1 for every text, human or machine. That is what the `qwen35` profile measures on the 67 controls: the
   surprisal statistics of Qwen3.5-2B-Base separate them with AUC 0.92 to 0.96 while the Qwen3.5-9B Binoculars ratio
   reaches only 0.62 and Fast-DetectGPT 0.60, close to chance. Independent
   measurements agree that the pair matters more than the statistic: Binoculars on a Qwen3-4B pair scored at chance (0.51)
@@ -360,7 +361,7 @@ in this repo's controls:
 What the 67 controls say about each measure (AUC of the measure alone, human direction; from the index page of each run,
 October 2026):
 
-| Measure | `original` / `--older-models` (Falcon pair, Qwen2.5-1.5B) | `latest` / default (Qwen3.5-9B pair, Qwen3.5-2B-Base) |
+| Measure | `original` / `--older-models` (Falcon pair, Qwen2.5-1.5B) | `qwen35` (Qwen3.5-9B pair, Qwen3.5-2B-Base) |
 | --- | ---: | ---: |
 | Surprisal spread (sd of token log-probability) | 0.89 | 0.96 |
 | Mean next-token entropy | 0.91 | 0.94 |
@@ -515,7 +516,7 @@ scores alongside drafts, sources and the writer's history, never as a verdict on
 - Ebtesam Almazrouei et al. **The Falcon Series of Open Language Models.** 2023.
   [arXiv:2311.16867](https://arxiv.org/abs/2311.16867). Models: `tiiuae/falcon-7b`, `tiiuae/falcon-7b-instruct` (Apache 2.0).
 - Qwen Team. **Qwen2.5 Technical Report.** 2024. [arXiv:2412.15115](https://arxiv.org/abs/2412.15115).
-  Models: `Qwen/Qwen2.5-1.5B` and, in the `latest` profile, the Qwen3.5 family (Apache 2.0).
+  Models: `Qwen/Qwen2.5-1.5B` and the Qwen3.5 family (Apache 2.0), including the small base models used by every current profile.
 - Alec Radford et al. **Language Models are Unsupervised Multitask Learners.** 2019. Model: `openai-community/gpt2` (MIT).
 
 ## Controls

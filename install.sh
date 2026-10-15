@@ -32,7 +32,7 @@ if [[ "$(uname -s)" == Darwin ]]; then
 else
   ram_gb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1048576 )); free_gb=$(df -BG "$MODELS_DIR" | awk 'NR==2{gsub("G","",$4); print $4}')
 fi
-case "$PROFILE" in latest) NEED=50;; olmo3) NEED=45;; smollm3) NEED=25;; hybrid) NEED=45;; *) NEED=40;; esac
+case "$PROFILE" in qwen35) NEED=50;; olmo3) NEED=45;; smollm3) NEED=25;; hybrid) NEED=45;; *) NEED=40;; esac
 say "System check: ${ram_gb} GB RAM, ${free_gb} GB free at ${MODELS_DIR} (profile ${PROFILE} needs about ${NEED} GB)"
 (( free_gb >= NEED )) || fail "Need about ${NEED} GB free for the ${PROFILE} models; ${free_gb} GB available at ${MODELS_DIR}. Use --models-dir to put them on another disk."
 (( ram_gb >= 32 )) || printf 'warning: the Falcon-7B pair needs ~29 GB of memory during a run; with %s GB this will be slow or fail.\n' "$ram_gb"
