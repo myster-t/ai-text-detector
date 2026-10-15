@@ -1,6 +1,23 @@
 {
+  "latest": {
+    "description": "Default: current-generation models only (Qwen3.5, 2026) plus the 2026 ModernBERT classifier. The 9B pair is weak for Binoculars / Fast-DetectGPT on the controls (AUC about 0.6); the small base models carry the strongest token statistics and the combined score leans on those.",
+    "observer": "Qwen/Qwen3.5-9B-Base",
+    "performer": "Qwen/Qwen3.5-9B",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen3.5-2B-Base",
+        "Qwen3.5-2B-Base"
+      ],
+      [
+        "Qwen/Qwen3.5-0.8B-Base",
+        "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
+  },
   "hybrid": {
-    "description": "Default since 2026-10-14. Hybrid: the Binoculars paper's Falcon-7B pair as observer/performer (the best pair for Binoculars and Fast-DetectGPT on the 67 controls, AUC 0.80 / 0.79) with the current Qwen3.5 small base models for the token statistics (the strongest measures, AUC 0.90-0.96). No published thresholds for this combination, so reports give no verdict.",
+    "description": "Falcon-7B pair (2023; best measured pair for Binoculars / Fast-DetectGPT, AUC 0.80 / 0.79) with the Qwen3.5 small models. Kept for comparison; not the default because the Falcon models are 2023-era.",
     "observer": "tiiuae/falcon-7b",
     "performer": "tiiuae/falcon-7b-instruct",
     "perplexity_models": [
@@ -13,7 +30,8 @@
         "Qwen3.5-0.8B-Base"
       ]
     ],
-    "calibrated": false
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
   },
   "original": {
     "description": "The Binoculars paper's reference pair and the thresholds derived for it (2023 models). Calibrated: reports state a Binoculars verdict. Select with --older-models.",
@@ -31,23 +49,8 @@
     ],
     "calibrated": true,
     "threshold_accuracy": 0.9015310749276843,
-    "threshold_low_fpr": 0.8536432310785527
-  },
-  "latest": {
-    "description": "Current-generation models only (Qwen3.5, 2026). Measured: its 9B pair is near chance for Binoculars / Fast-DetectGPT on the 67 controls (AUC 0.62 / 0.60); its small base models carry the strongest measures. Kept as the all-Qwen3.5 option.",
-    "observer": "Qwen/Qwen3.5-9B-Base",
-    "performer": "Qwen/Qwen3.5-9B",
-    "perplexity_models": [
-      [
-        "Qwen/Qwen3.5-2B-Base",
-        "Qwen3.5-2B-Base"
-      ],
-      [
-        "Qwen/Qwen3.5-0.8B-Base",
-        "Qwen3.5-0.8B-Base"
-      ]
-    ],
-    "calibrated": false
+    "threshold_low_fpr": 0.8536432310785527,
+    "classifier": "tabularisai/ai-text-detection"
   },
   "dev": {
     "description": "Development profile: small local models only, for fast iteration on the report. Not a detector recommendation.",
@@ -59,7 +62,8 @@
         "GPT-2"
       ]
     ],
-    "calibrated": false
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
   },
   "falcon3": {
     "description": "Bake-off candidate: Falcon3-7B base/instruct (2024, Apache 2.0) as observer/performer, with the default profile's small Qwen3.5 base models for token statistics. Uncalibrated.",
@@ -75,6 +79,41 @@
         "Qwen3.5-0.8B-Base"
       ]
     ],
-    "calibrated": false
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
+  },
+  "smollm3": {
+    "description": "Bake-off candidate: SmolLM3-3B base/instruct (Hugging Face, 2025, Apache 2.0) as observer/performer, Qwen3.5 small models for token statistics.",
+    "observer": "HuggingFaceTB/SmolLM3-3B-Base",
+    "performer": "HuggingFaceTB/SmolLM3-3B",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen3.5-2B-Base",
+        "Qwen3.5-2B-Base"
+      ],
+      [
+        "Qwen/Qwen3.5-0.8B-Base",
+        "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
+  },
+  "olmo3": {
+    "description": "Bake-off candidate: OLMo-3 7B base (Olmo-3-1025-7B) / Olmo-3-7B-Instruct (Ai2, 2025-26, Apache 2.0, fully open training data) as observer/performer, Qwen3.5 small models for token statistics.",
+    "observer": "allenai/Olmo-3-1025-7B",
+    "performer": "allenai/Olmo-3-7B-Instruct",
+    "perplexity_models": [
+      [
+        "Qwen/Qwen3.5-2B-Base",
+        "Qwen3.5-2B-Base"
+      ],
+      [
+        "Qwen/Qwen3.5-0.8B-Base",
+        "Qwen3.5-0.8B-Base"
+      ]
+    ],
+    "calibrated": false,
+    "classifier": "tabularisai/ai-text-detection"
   }
 }

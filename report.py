@@ -9,20 +9,20 @@ if pathlib.Path(_md).is_dir(): os.environ.setdefault("HF_HOME", _md)
 os.environ.setdefault("HF_HUB_OFFLINE", "1"); os.environ.setdefault("TRANSFORMERS_OFFLINE", "1"); os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch, torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
-sys.path.insert(0, str(HERE)); import style as style_mod, unicode_check, features, lmfeat, charts
+sys.path.insert(0, str(HERE)); import style as style_mod, unicode_check, features, lmfeat, charts, slop, classifier
 from charts import esc
 
 PROFILES = json.loads((HERE / "profiles.json").read_text())
 ap = argparse.ArgumentParser(description="Score text files for machine generation and write HTML reports.")
 ap.add_argument("files", nargs="*", help="UTF-8 text files to score")
 ap.add_argument("--out", default="reports", help="output folder (default: ./reports)")
-ap.add_argument("--profile", default=None, choices=sorted(PROFILES), help="model set by name (default: hybrid)")
+ap.add_argument("--profile", default=None, choices=sorted(PROFILES), help="model set by name (default: latest)")
 ap.add_argument("--older-models", action="store_true", help="use the original 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (same as --profile original)")
 ap.add_argument("--selftest", action="store_true", help="score the bundled controls and check they separate")
 ap.add_argument("--rescore-controls", action="store_true", help="ignore the cached control scores for this profile and recompute them")
 args = ap.parse_args()
 if args.older_models and args.profile and args.profile != "original": ap.error("--older-models means --profile original; drop one of them")
-args.profile = "original" if args.older_models else (args.profile or "hybrid")
+args.profile = "original" if args.older_models else (args.profile or "latest")
 P = PROFILES[args.profile]; CAL = bool(P.get("calibrated"))
 T_ACC, T_FPR = P.get("threshold_accuracy"), P.get("threshold_low_fpr")
 dev = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
@@ -74,7 +74,9 @@ def cached(p):
     e = cache["entries"].get(ctrl_key.get(p)); return e if e and e.get("sha") == sha(texts[p]) else None
 need = [p for p in texts if p in ctrl_key and not cached(p)]           # controls to (re)score with the models
 to_score = targets + need
-log(f"[cache] {len(CONTROLS) - len(need)} controls loaded from {CACHE_PATH.name}; scoring {len(targets)} file(s) + {len(need)} control(s)")
+CLF = P.get("classifier")
+need_clf = [p for p in texts if p in ctrl_key and cached(p) is not None and "clf" not in cached(p)] if CLF else []
+log(f"[cache] {len(CONTROLS) - len(need)} controls loaded from {CACHE_PATH.name}; scoring {len(targets)} file(s) + {len(need)} control(s)" + (f"; classifier needed for {len(need_clf)} cached control(s)" if need_clf else ""))
 
 
 # ---- perplexity models: whole-document token statistics for every model, sentence-level for the first ----
@@ -115,19 +117,32 @@ def bino(t):
 bino_res = {p: (bino(t) if p in to_score else tuple(NAN if v is None else v for v in cached(p)["bino"])) for p, t in texts.items()}
 release(otok, obs, ptok, perf)
 
+# ---- supervised classifier (optional, one vote) ----
+clf_res = {}
+if CLF:
+    log(f"[classifier] loading {CLF}"); ctok, cm = classifier.load(CLF, dev)
+    for p, t in texts.items():
+        if p in to_score or p in need_clf: clf_res[p] = classifier.p_ai(cm, ctok, t, dev)
+        else: clf_res[p] = cached(p).get("clf", NAN) if cached(p) else NAN
+        if clf_res[p] is None: clf_res[p] = NAN
+    release(ctok, cm)
+
 # ---- write the control cache (only when something was scored) ----
-if need:
+if need or need_clf:
     def _clean(d): return {k: (None if isinstance(v, float) and v != v else v) for k, v in d.items() if k != "tokens"}
     for p in need:
         cache["entries"][ctrl_key[p]] = {"sha": sha(texts[p]), "lm": {l: _clean(lm[(p, l)]) for l in [lb for _, lb in P["perplexity_models"]]},
                                           "sent_ppl": {"mean": sent_ppl[p]["mean"], "sd": sent_ppl[p]["sd"]}, "bino": list(bino_res[p])}
+    for p in need + need_clf:
+        if CLF and p in clf_res and clf_res[p] == clf_res[p]: cache["entries"][ctrl_key[p]]["clf"] = clf_res[p]
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True); CACHE_PATH.write_text(json.dumps(cache, indent=1, sort_keys=True))
-    log(f"[cache] wrote {len(need)} control score(s) to {CACHE_PATH}")
+    log(f"[cache] wrote {len(need)} control score(s) (+{len(need_clf)} classifier values) to {CACHE_PATH}")
 
 # ---- deterministic checks ----
 style_res = {p: style_mod.analyze(t) for p, t in texts.items()}
 uni_res = {p: unicode_check.check(t) for p, t in texts.items()}
 feat_res = {p: features.analyze(t) for p, t in texts.items()}
+slop_res = {p: slop.analyze(t) for p, t in texts.items()}
 
 # ---- measure registry: (group, key, title, higher_is_human, note, getter, log) ----
 MEAS = [("Model-based signals", "binoculars", "Binoculars score", True, "performer perplexity / observer-performer cross-perplexity", lambda p: bino_res[p][0], False),
@@ -137,7 +152,24 @@ MEAS = [("Model-based signals", "binoculars", "Binoculars score", True, "perform
         ("Model-based signals", "burst", f"Burstiness, {L0}", True, "sd of sentence perplexity, log scale", lambda p: sent_ppl[p]["sd"], True)]
 for l in PPL_LABELS[1:]: MEAS.append(("Model-based signals", f"ppl_{l}", f"Perplexity, {l}", True, "log scale", (lambda l: lambda p: lm[(p, l)]["ppl"])(l), True))
 for k, title, hih, note in lmfeat.MEASURES: MEAS.append(("Token statistics", k, title, hih, note, (lambda k: lambda p: lm[(p, L0)][k])(k), False))
+if CLF: MEAS.append(("Model-based signals", "clf_p_ai", "Supervised classifier P(AI) (ModernBERT, 2026)", False, "one vote; strong in-distribution, weak on unseen generators", lambda p: clf_res[p], False))
 MEAS.append(("Writing patterns", "aiisms", "AI-ism score (avoid-ai-writing, 0-100)", False, "deterministic vocabulary and template rules", lambda p: style_res[p].get("score"), False))
+for k, title, hih, note in slop.MEASURES: MEAS.append(("Writing patterns", k, title, hih, note, (lambda k: lambda p: slop_res[p][k])(k), False))
+# When each test was designed and by whom, for the test table and the README.
+META = {"binoculars": ("2024", "Hans et al., ICML 2024"), "fastdetectgpt": ("2023", "Bao et al., ICLR 2024"), "imprint": ("2026", "Wu et al. (LAPD), unweighted form"),
+        "burst": ("2023", "GPTZero-style burstiness"), "top10": ("2019", "GLTR, Gehrmann et al."), "top1": ("2019", "GLTR, Gehrmann et al."),
+        "mean_logrank": ("2023", "DetectLLM, Su et al."), "lrr": ("2023", "DetectLLM, Su et al."), "mean_entropy": ("2019", "GLTR, Gehrmann et al."),
+        "lp_sd": ("2024", "Lastde family, Xu et al."), "lp_volatility": ("2024", "Lastde family, Xu et al."), "late_stability": ("2026", "Sun et al."),
+        "lp_autocorr1": ("2026", "DivEye family, Basani & Chen"), "shuffle_ratio": ("2026", "Luminol-AIDetect, La Cava & Tagarelli"),
+        "clf_p_ai": ("2026", "tabularisai ModernBERT on RAID (2024) data"), "aiisms": ("2025", "avoid-ai-writing, Bronsdon"),
+        "slop_word_per_k": ("2025", "slop-forensics, Paech"), "slop_top300_per_k": ("2025", "slop-forensics, Paech"), "slop_ngram_per_k": ("2025", "slop-forensics, Paech"),
+        "slop_phrase_per_k": ("2025", "antislop-sampler, Paech"), "slop_construction_per_k": ("2025", "antislop-sampler, Paech"),
+        "mattr": ("2010", "Covington & McFall"), "mtld": ("2010", "McCarthy & Jarvis"), "hapax_ratio": ("classic", "lexical statistics"),
+        "sent_len_cv": ("2023", "burstiness analogue"), "para_len_cv": ("2023", "burstiness analogue"), "em_dash_per_k": ("2025", "em-dash studies")}
+def meta(k):
+    if k in META: return META[k]
+    if k.startswith("ppl_"): return ("2019", "perplexity, Solaiman et al. / GLTR")
+    return ("classic", "stylometry")
 STYLE_KEYS = ("mattr", "mtld", "hapax_ratio", "sent_len_cv", "para_len_cv", "sent_len_mean", "word_len_mean", "long_word_ratio", "sent_start_repeat")
 for k, title, hih, note in features.MEASURES:
     MEAS.append(("Style and rhythm" if k in STYLE_KEYS else "Punctuation and constructions", k, title, hih, note, (lambda k: lambda p: feat_res[p][k])(k), False))
@@ -173,6 +205,44 @@ def separation(k):
     auc = sum((1.0 if a > b else 0.5 if a == b else 0.0) for a in h for b in m) / (len(h) * len(m))
     return auc if hih is None or hih else 1 - auc
 
+# ---- ensemble "concern" score: weighted log-likelihood ratio across the measures that separate the controls ----
+import statistics as _st
+ENS_MIN_AUC = 0.70
+def _f(k): return (lambda x: math.log10(max(x, 1e-9))) if k in LOGK else (lambda x: x)
+def _gauss_llr(x, h, m):
+    """log N(x; machine) - log N(x; human) with a pooled spread; positive = more machine-like; clipped to +/-4."""
+    if len(h) < 3 or len(m) < 3: return 0.0
+    mh, mm = _st.fmean(h), _st.fmean(m)
+    sp = max((_st.pstdev(h) + _st.pstdev(m)) / 2, 0.05 * (abs(mh) + abs(mm)) / 2, 1e-6)
+    return max(-4.0, min(4.0, -0.5 * ((x - mm) / sp) ** 2 + 0.5 * ((x - mh) / sp) ** 2))
+ENS_KEYS = [(k, separation(k)) for _, k, _, hih, _, _, _ in MEAS if hih is not None and separation(k) == separation(k) and separation(k) >= ENS_MIN_AUC]
+def ensemble(p):
+    """Weighted mean LLR over ENS_KEYS; a control's own value is left out of its group's fit (leave-one-out)."""
+    num = den = 0.0
+    for k, auc in ENS_KEYS:
+        x = vals[(p, k)]
+        if not isinstance(x, (int, float)) or x != x: continue
+        f = _f(k)
+        h = [f(vals[(q, k)]) for q in HC if q != p and isinstance(vals[(q, k)], (int, float)) and vals[(q, k)] == vals[(q, k)]]
+        m = [f(vals[(q, k)]) for q in MC if q != p and isinstance(vals[(q, k)], (int, float)) and vals[(q, k)] == vals[(q, k)]]
+        llr = _gauss_llr(f(x), h, m)
+        if not hih_of(k): llr = llr      # direction is already encoded in the two fitted groups
+        w = 2 * (auc - 0.5); num += w * llr; den += w
+    return num / den if den else NAN
+def hih_of(k): return next(h for _, kk, _, h, _, _, _ in MEAS if kk == k)
+ens_h = [ensemble(q) for q in HC]; ens_m = [ensemble(q) for q in MC]
+ens_auc = sum((1.0 if b > a else 0.5 if a == b else 0.0) for a in ens_h for b in ens_m) / max(len(ens_h) * len(ens_m), 1)
+_allc = sorted(ens_h + ens_m); _cands = [(a + b) / 2 for a, b in zip(_allc, _allc[1:]) if b > a]
+def _bal(c): return (sum(1 for x in ens_h if x < c) / len(ens_h) + sum(1 for x in ens_m if x >= c) / len(ens_m)) / 2
+ens_cut = max(_cands, key=lambda c: (round(_bal(c), 6), -abs(c))) if _cands else 0.0
+def concern(score):
+    """Plain-language level from the combined score, using the control distributions."""
+    if score != score: return ("unknown", "", "")
+    ph = sum(1 for x in ens_h if x <= score) / len(ens_h); pm = sum(1 for x in ens_m if x >= score) / len(ens_m)
+    if score < ens_cut: lvl, cls = ("low" if ph <= 0.75 else "low to moderate"), "ok"
+    else: lvl, cls = ("high" if pm <= 0.5 else "moderate"), ("bad" if pm <= 0.5 else "warn")
+    return (lvl, cls, f"higher than {ph*100:.0f}% of human controls and lower than {(1-pm)*100:.0f}% of machine controls")
+
 # ---- html pieces ----
 CSS = """:root{--bg:#fbfaf6;--panel:#ffffff;--ink:#1b1b1b;--mut:#5c5b56;--rule:#d8d5cb;--th:#efede6;--link:#0b57d0;--hum:#1f8a4c;--mach:#d2452f;--tgt:#111111;--ok:#1f8a4c;--bad:#c0392b;--warn:#b7791f;
 --g0:#1f8a4c;--g1:#7cc47f;--g2:#f2c94c;--g3:#f08a4b;--g4:#a65cd1;--mark:#ffe08a;--mark-hi:#ffb3a7;--sent:#fff3c2;--hid:#e03b3b}
@@ -191,6 +261,9 @@ h1{font-size:1.75rem;margin:0 0 4px;text-wrap:balance}h2{font-size:1.25rem;margi
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}.violin{width:100%;height:auto;display:block;background:var(--panel);border:2px solid var(--rule);border-radius:8px}
 .violin.vh{border-color:var(--hum)}.violin.vm{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}
 .violin.weak{filter:saturate(.15);border-style:dashed;border-color:var(--mut);transition:filter .15s}.violin.weak:hover,.violin.weak:focus{filter:none}
+details.sec summary{cursor:pointer;list-style:none;margin:18px 0 8px}details.sec summary h3{display:inline;font-size:1rem}details.sec summary::-webkit-details-marker{display:none}details.sec summary h3::before{content:"▸ ";color:var(--mut)}details.sec[open] summary h3::before{content:"▾ "}
+.lvl{display:inline-block;padding:2px 10px;border-radius:6px;font-weight:700;color:#fff}.lvl.ok{background:var(--hum)}.lvl.warn{background:var(--warn)}.lvl.bad{background:var(--mach)}
+td.side-h{color:var(--ok);font-weight:600}td.side-m{color:var(--bad);font-weight:600}td.side-w{color:var(--mut)}
 details.all summary{cursor:pointer;list-style:none}details.all summary h2{display:inline-block;margin-top:38px}details.all summary::-webkit-details-marker{display:none}details.all summary h2::before{content:"▸ ";color:var(--mut)}details.all[open] summary h2::before{content:"▾ "}
 .pkey{display:flex;flex-wrap:wrap;gap:10px 18px;margin:8px 0 14px;font-size:.86rem}.pkey span{display:inline-flex;align-items:center;gap:7px}.kb{display:inline-block;width:26px;height:16px;border-radius:4px;border:2px solid var(--rule);background:var(--panel)}
 .kb.h{border-color:var(--hum)}.kb.m{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}.kb.w{border-style:dashed;border-color:var(--mut);filter:saturate(.15)}
@@ -219,9 +292,10 @@ def verdict_of(b):
     return "human" if b >= T_ACC else ("AI-like (accuracy line)" if b >= T_FPR else "AI-like (strict line)")
 def cls_b(b): return "" if not CAL else ("ok" if b >= T_ACC else "bad")
 
-def annotate(text, st, un):
-    """The text with AI-ism matches, flagged sentence spans, hidden characters and mixed-script words marked inline."""
+def annotate(text, st, un, sl=None):
+    """The text with AI-ism matches, slop vocabulary, flagged sentence spans, hidden characters and mixed-script words marked inline."""
     n = len(text); marks = []   # (start, end, cls, title)
+    for s, e, kind in (sl or {}).get("matches", []): marks.append((s, e, "lo", f"{kind} (2025 over-representation lists)"))
     for i in st.get("issues", []):
         word = str(i.get("text") or ""); ttl = f"{i.get('typeLabel', i.get('type'))} ({i.get('severity')})" + (f": {i.get('suggestion')}" if i.get("suggestion") else "")
         cls = "hi" if i.get("severity") == "high" else ("" if i.get("severity") == "medium" else "lo")
@@ -256,7 +330,7 @@ def annotate(text, st, un):
         out.append(f'<span class=sent title="sentence span flagged by the pattern detector">{seg}</span>' if in_sent[j] else seg); j = k
     return "".join(out), len(set((s, e) for s, e, _, _ in marks))
 
-summary_rows = []
+summary_rows = []; ens_rows = {}
 for p in targets:
     t = texts[p]; b, ntok, fd, imp = bino_res[p]; st, un, ft = style_res[p], uni_res[p], feat_res[p]; q = sent_ppl[p]; L = lm[(p, L0)]
     verdict = verdict_of(b)
@@ -266,31 +340,63 @@ for p in targets:
         tlines = [(T_FPR, "strict"), (T_ACC, "accuracy")]
     else:
         box = f"<p><b>Binoculars {b:.3f}</b> under an uncalibrated model set, so no verdict is given; read the position against the controls.</p>"; tlines = []
+    ens = ensemble(p); lvl, lcls, lpos = concern(ens); ens_rows[p.name] = (ens, lvl, lcls, lpos)
     sides = [(k, side_text(vals[(p, k)], k, hih)) for _, k, _, hih, _, _, _ in MEAS if hih is not None]
     nh, nm = sum(1 for _, s in sides if s == "human"), sum(1 for _, s in sides if s == "machine")
     strong = [(k, s) for k, s in sides if separation(k) == separation(k) and separation(k) >= 0.85]
     sh, sm = sum(1 for _, s in strong if s == "human"), sum(1 for _, s in strong if s == "machine")
-    box += f"<p>Across the {len(sides)} directional measures below, this file lands on the human side of the controls' best cut-point for <b>{nh}</b> and on the machine side for <b>{nm}</b>. Counting only the {len(strong)} measures that separate the controls well under this profile (AUC ≥ 0.85): human side <b>{sh}</b>, machine side <b>{sm}</b>. Model-based signals carry most of the weight; stylometric measures describe register and rhythm and are weaker evidence on their own.</p>"
+    box = f"<p><span class='lvl {lcls}'>{esc(lvl)} concern</span> &nbsp; <b>Combined score {ens:+.2f}</b> (control cut-point {ens_cut:+.2f}; {esc(lpos)}).</p>" + box
+    box += f"<p>The combined score averages the evidence of {len(ENS_KEYS)} measures (each one's log-likelihood ratio between the machine and human control distributions, weighted by how well it separates the controls); fitted leave-one-out on the controls it separates them with AUC {ens_auc:.2f}. Positive = machine-like. Across the {len(sides)} directional measures, this file lands on the human side of the control cut-point for <b>{nh}</b> and on the machine side for <b>{nm}</b>; among the {len(strong)} strong measures (AUC at least 0.85): human side <b>{sh}</b>, machine side <b>{sm}</b>.</p>"
     def tile(k, label, v, hih, sub=""):
         s = side_text(v, k, hih); scls = "ok" if s == "human" else ("bad" if s == "machine" else "")
         return f'<div class=tile><div class=k>{esc(label)}</div><div class=v>{fmtk(k, v)}</div><div class=s>{sub}{(" · <span class=\"side " + scls + "\">" + s + " side</span>") if s else ""}</div>{charts.position_bar(hv(k), mv(k), v, hih)}</div>'
     tiles = tile("binoculars", "Binoculars", b, True, esc(verdict) if CAL else "no threshold") + tile("fastdetectgpt", "Fast-DetectGPT", fd, False, "curvature; lower = more human") + tile(f"ppl_{L0}", f"Perplexity ({L0})", L["ppl"], True, "higher = less predictable") + tile("top10", "GLTR top-10 share", L["top10"], False, "share of tokens the model expected") + tile("aiisms", "AI-isms", st.get("score"), False, esc(st.get("label", ""))) + tile("sent_len_cv", "Sentence-length variation", ft["sent_len_cv"], True, "coefficient of variation")
     tiles += f'<div class=tile><div class=k>Hidden characters</div><div class="v {"ok" if un["status"] == "clean" else "warn"}">{un["hidden_total"] + len(un["mixed_script_words"])}</div><div class=s>{esc(un["status"])}{(": " + esc(", ".join(f"{v} {k}" for k, v in un["hidden_by_kind"].items()))) if un["hidden_by_kind"] else ""}{(" · " + str(len(un["mixed_script_words"])) + " mixed-script words") if un["mixed_script_words"] else ""}</div></div>'
-    groups = {}
-    for grp, k, title, hih, note, g, lg in MEAS: groups.setdefault(grp, []).append((k, title, hih, note, lg))
-    vio = ""
-    for grp, items in groups.items():
-        vio += f"<h3>{esc(grp)}</h3><div class=grid>"
-        items = sorted(items, key=lambda it: -(separation(it[0]) if separation(it[0]) == separation(it[0]) else 0))
-        for k, title, hih, note, lg in items:
-            auc = separation(k); sep = f"AUC {auc:.2f}" if auc == auc else ""
-            vio += charts.violin(title, hv(k), mv(k), vals[(p, k)], hih, note=(sep + ("; " if note and sep else "") + note), log=lg, auc=auc, side=side_text(vals[(p, k)], k, hih) or None, cut=cutpoint(k))
-        vio += "</div>"
+    # test table: every measure, sorted by how well it separates the controls, with design year and this file's side
+    trows = []
+    for grp, k, title, hih, note, g, lg in sorted(MEAS, key=lambda m: -(separation(m[1]) if separation(m[1]) == separation(m[1]) else 0)):
+        auc = separation(k); sd = side_text(vals[(p, k)], k, hih); yr, who = meta(k)
+        if auc != auc: continue
+        weak = auc < ENS_MIN_AUC; scls = "side-w" if (weak or not sd) else ("side-h" if sd == "human" else "side-m")
+        trows.append(f"<tr><td>{esc(title)}</td><td>{esc(yr)}</td><td class=mut>{esc(who)}</td><td class=n>{fmtk(k, vals[(p, k)])}</td><td class='{scls}'>{esc(sd or 'no claim')}{' (weak)' if sd and weak else ''}</td><td class=n>{auc:.2f}</td></tr>")
+    thd = "<tr><th>Test</th><th>Designed</th><th>Source</th><th class=n>This file</th><th>Side of cut</th><th class=n>AUC on controls</th></tr>"
+    strong_rows = [x for x in trows if "(weak)" not in x and "side-w" not in x]; weak_rows = [x for x in trows if x not in strong_rows]
+    test_tbl = "<div class=wrap><table>" + thd + "".join(strong_rows) + "</table></div>"
+    test_tbl += f"<details class=sec><summary><h3>Weak or undirected tests on these controls ({len(weak_rows)}; click to show)</h3></summary><div class=wrap><table>" + thd + "".join(weak_rows) + "</table></div></details>"
+    # panels: main factors = measures with AUC >= 0.80 (at least the top 9); the rest collapsed
+    ranked = sorted([(k, title, hih, note, lg, grp) for grp, k, title, hih, note, g, lg in MEAS], key=lambda it: -(separation(it[0]) if separation(it[0]) == separation(it[0]) else 0))
+    primary = [it for it in ranked if separation(it[0]) == separation(it[0]) and separation(it[0]) >= 0.80]
+    if len(primary) < 9: primary = ranked[:9]
+    pk = {it[0] for it in primary}; secondary = [it for it in ranked if it[0] not in pk]
+    def panel(it):
+        k, title, hih, note, lg, grp = it; auc = separation(k); sep = f"AUC {auc:.2f}" if auc == auc else ""
+        return charts.violin(title, hv(k), mv(k), vals[(p, k)], hih, note=(sep + ("; " if note and sep else "") + note), log=lg, auc=auc, side=side_text(vals[(p, k)], k, hih) or None, cut=cutpoint(k))
+    vio = "<h3>Main factors</h3><div class=grid>" + "".join(panel(it) for it in primary) + "</div>"
+    vio += f"<details class=sec><summary><h3>Secondary measures ({len(secondary)}, weaker on these controls; click to show)</h3></summary><div class=grid>" + "".join(panel(it) for it in secondary) + "</div></details>"
+    ens_vio = charts.violin("Combined score (weighted evidence across measures)", ens_h, ens_m, ens, False, note=f"AUC {ens_auc:.2f} leave-one-out; cut {ens_cut:+.2f}", auc=ens_auc, side=("machine" if ens >= ens_cut else "human"), cut=ens_cut)
     strips = charts.strip("Binoculars score (higher = more human-like)", [(c.name, bino_res[c.resolve()][0], is_human[c.resolve()]) for c in CONTROLS], b, p.name, lines=tlines)
     strips += charts.strip("Fast-DetectGPT (lower = more human-like)", [(c.name, bino_res[c.resolve()][2], is_human[c.resolve()]) for c in CONTROLS], fd, p.name)
     gl = charts.gltr_html(t, L["tokens"]) if L["tokens"] else "<p class=mut>n/a</p>"
     gkey = f'<p class=legend><span class="key g0">top-1 {L["top1"]*100:.0f}%</span><span class="key g1">top-10 {(L["top10"]-L["top1"])*100:.0f}%</span><span class="key g2">top-100 {(L["top100"]-L["top10"])*100:.0f}%</span><span class="key g3">top-1000 {(L["top1000"]-L["top100"])*100:.0f}%</span><span class="key g4">beyond {(1-L["top1000"])*100:.0f}%</span> &nbsp; share in top-10, controls: human {min(hv("top10"))*100:.0f} to {max(hv("top10"))*100:.0f}%, machine {min(mv("top10"))*100:.0f} to {max(mv("top10"))*100:.0f}%</p>'
-    ann, nmarks = annotate(t, st, un)
+    ann, nmarks = annotate(t, st, un, slop_res[p])
+    pv = un.get("provenance", {})
+    PROV = [("nbsp_after_sentence_end", "No-break space (U+00A0) directly after a sentence end", "Replaces the ordinary space after a period. Seen in text copied out of chat interfaces (ChatGPT in 2025 emitted U+00A0 / U+202F between sentences) and in some word processors; a human typing in a plain editor produces none."),
+            ("nbsp", "No-break spaces (U+00A0), total", "Word processors insert them around numbers and units; chat and web copies scatter them more widely."),
+            ("narrow_nbsp", "Narrow no-break spaces (U+202F)", "Rare in typed text; the specific character ChatGPT inserted in spring 2025, and French-style punctuation spacing."),
+            ("zero_width", "Zero-width characters", "Invisible; used by some watermarking and copy-tracking schemes, and left by some editors."),
+            ("curly_quotes", "Curly quotes", "Word processors and chat interfaces convert to curly quotes; plain editors, code editors and many web forms keep straight ones."),
+            ("straight_quotes", "Straight quotes", ""),
+            ("em_dash", "Em dashes", "Heavy, unspaced em-dash use is a widely noted 2024-26 chatbot habit; some human writers and most word processors (auto-replacing --) produce them too."),
+            ("double_hyphen", "Double hyphens (--)", "A typed em dash that no word processor converted."),
+            ("ellipsis_char", "Ellipsis character (U+2026)", "Auto-converted by word processors and chat interfaces; typed text has three periods."),
+            ("line_sep", "Line / paragraph separators (U+2028/9)", "Left by some PDF and web copies."), ("soft_hyphen", "Soft hyphens (U+00AD)", "Left by PDF and typeset copies.")]
+    prov_rows = "".join(f"<tr><td>{esc(lab)}</td><td class=n>{pv.get(k, 0)}</td><td class=mut>{esc(why)}</td></tr>" for k, lab, why in PROV if pv.get(k, 0) or k in ("nbsp_after_sentence_end", "curly_quotes", "straight_quotes", "em_dash"))
+    hints = []
+    if pv.get("nbsp_after_sentence_end", 0): hints.append(f"{pv['nbsp_after_sentence_end']} no-break space(s) sit directly after sentence ends, a pattern typical of text copied from a chat window or a word processor rather than typed into a plain editor")
+    if pv.get("narrow_nbsp", 0): hints.append("narrow no-break spaces are present, the character ChatGPT emitted in spring 2025")
+    if pv.get("curly_quotes", 0) and not pv.get("straight_quotes", 0): hints.append("quotes are all curly, so the text passed through software that typesets quotes (word processor, chat interface, or a style-aware editor)")
+    if pv.get("em_dash", 0) and not pv.get("double_hyphen", 0): hints.append(f"{pv['em_dash']} true em dash(es) and no typed double hyphens")
+    prov_txt = ("Observed: " + "; ".join(hints) + ".") if hints else "Nothing beyond ordinary typed text was observed."
     mx = max((v for _, v in q["sent"] if v == v), default=1) or 1
     sent_rows = "".join(f"<tr><td class=n>{i+1}</td><td>{esc(s)}</td><td class=n>{fmt(v)}</td><td><span class=bar style='width:{int(160*v/mx) if v == v else 0}px'></span></td></tr>" for i, (s, v) in enumerate(q["sent"]))
     issues = st.get("issues", [])
@@ -307,6 +413,10 @@ for p in targets:
 <div class=verdict>{box}</div>
 <div class=tiles>{tiles}</div>
 <p class=legend>Each tile's bar shows the control ranges (<span class=sw style="background:var(--hum)"></span>human, <span class=sw style="background:var(--mach)"></span>machine) and this file as a diamond.</p>
+<h2>Which tests say what</h2>
+<p>Every test, when it was designed, what this file scored, which side of the control cut-point that lands on, and how well the test separates the {len(HUMAN)} human and {len(AI)} machine controls under this model set. Tests are sorted by that reliability; "weak" means AUC below {ENS_MIN_AUC:.2f}, where the side label is close to a coin flip and is not used in the combined score.</p>
+{test_tbl}
+<div class=grid>{ens_vio}</div>
 <h2>The shape of this text against the controls</h2>
 <p>Every measure is computed for {len(HUMAN)} human and {len(AI)} machine control texts in the same run with the same models. Each panel shows the two control distributions as violins (points are the individual controls, the bar is the median), the dotted line is the cut-point that best separates the two groups, and the dashed line is this file. <b>Up is always the human direction</b>: panels for measures where lower values are more human-like have their axis reversed. Panels are ordered by "AUC", how well that measure alone separates the two control groups (1.0 = perfectly, 0.5 = not at all).</p>
 <div class=pkey><span><i class="kb h"></i> green border: this file is on the <b>human</b> side of the cut</span><span><i class="kb m"></i> red border and halo: this file is on the <b>machine</b> side; skim for these</span><span><i class="kb w"></i> grey, dashed, desaturated: <b>weak measure</b> (AUC under 0.7), it barely separates the controls, so its side is not evidence and is left out of the strong count above</span></div>
@@ -320,6 +430,9 @@ for p in targets:
 <div class=txt>{ann}</div>
 <h3>Pattern list</h3>
 <p>Deterministic rules from the <a href="https://github.com/conorbronsdon/avoid-ai-writing">avoid-ai-writing</a> detector (Conor Bronsdon, MIT): vocabulary tiers, transitions, template phrases, chatbot artifacts, generic conclusions, hedging, formatting and rhythm signals. Control range: human {min(style_res[c].get('score', 0) for c in HC)} to {max(style_res[c].get('score', 0) for c in HC)}, machine {min(style_res[c].get('score', 0) for c in MC)} to {max(style_res[c].get('score', 0) for c in MC)}. These describe how the text reads and are useful for editing; they are weak evidence of authorship on their own.</p>{style_tbl}
+<h3>Provenance signals (where the text was composed or copied from)</h3>
+<p>Counts only; they say nothing about authorship by themselves. {prov_txt}</p>
+<div class=wrap><table><tr><th>Signal</th><th class=n>Count</th><th>What it usually means</th></tr>{prov_rows}</table></div>
 <h3>Hidden characters and mixed scripts</h3>
 <p><b>{esc(un['status'])}</b>: {un['hidden_total']} hidden or non-standard characters, {len(un['mixed_script_words'])} words mixing Latin with another script, in {un['chars']} characters. Zero-width characters, soft hyphens, bidirectional controls, variation selectors, tag characters and lookalike letters can carry watermarks or disguise text, but also arrive through ordinary copy-and-paste. They are evidence about the file, not about who wrote the words.</p>{hid_tbl}{mix_tbl}
 <h2>Sentence-level perplexity ({esc(L0)})</h2><p>Each sentence scored on its own. Wide variation between sentences (burstiness) is characteristic of human writing; generated text tends to be uniformly predictable.</p>
@@ -340,7 +453,7 @@ for p in targets:
 cpb = [(c.name, bino_res[c.resolve()][0], is_human[c.resolve()]) for c in CONTROLS]; cpf = [(c.name, bino_res[c.resolve()][2], is_human[c.resolve()]) for c in CONTROLS]
 idx_strip = charts.strip("Binoculars score, controls (higher = more human-like)", cpb, NAN, "", lines=([(T_FPR, "strict"), (T_ACC, "accuracy")] if CAL else []))
 idx_strip += charts.strip("Fast-DetectGPT, controls (lower = more human-like)", cpf, NAN, "")
-tmarks = "".join(f'<li><a href="{esc(n)[:-4]}-report.html"><b>{esc(n)}</b></a>: Binoculars {b:.3f}, Fast-DetectGPT {fd:.2f}, {esc(v)}</li>' for n, _, b, v, _, _, _, _, _, _, _, fd in summary_rows)
+tmarks = "".join(f'<li><a href="{esc(n)[:-4]}-report.html"><b>{esc(n)}</b></a>: <span class="lvl {ens_rows[n][2]}">{esc(ens_rows[n][1])} concern</span> combined {ens_rows[n][0]:+.2f}; Binoculars {b:.3f}, Fast-DetectGPT {fd:.2f}</li>' for n, _, b, v, _, _, _, _, _, _, _, fd in summary_rows)
 hdr = f"<tr><th>File</th><th class=n>Words</th><th class=n>Binoculars</th><th>Verdict</th><th class=n>Fast-DetectGPT</th>{''.join(f'<th class=n>ppl {esc(l)}</th>' for l in PPL_LABELS)}<th class=n>Burstiness</th><th class=n>AI-isms</th><th>Hidden chars</th></tr>"
 idx_rows = "".join(f"<tr><td><a href='{esc(n)[:-4]}-report.html'>{esc(n)}</a></td><td class=n>{w}</td><td class='n {cls_b(b)}'>{b:.3f}</td><td>{esc(v)}</td><td class=n>{fd:.2f}</td>{''.join(f'<td class=n>{fmt(x)}</td>' for x in pp)}<td class=n>{fmt(sd)}</td><td class=n>{ss}</td><td>{esc(us)}{(' (' + str(uh + um) + ')') if us != 'clean' else ''}</td></tr>" for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows)
 ctrl_rows = "".join(f"<tr><td class=mut>control ({'human' if is_human[c.resolve()] else 'machine'}): {esc(c.name)}</td><td class=n>{len(texts[c.resolve()].split())}</td><td class='n {cls_b(bino_res[c.resolve()][0])}'>{bino_res[c.resolve()][0]:.3f}</td><td></td><td class=n>{bino_res[c.resolve()][2]:.2f}</td>{''.join(f'<td class=n>{fmt(lm[(c.resolve(), l)][chr(112)+chr(112)+chr(108)])}</td>' for l in PPL_LABELS)}<td class=n>{fmt(sent_ppl[c.resolve()]['sd'])}</td><td class=n>{style_res[c.resolve()].get('score')}</td><td>{esc(uni_res[c.resolve()]['status'])}</td></tr>" for c in CONTROLS)
@@ -362,5 +475,6 @@ if args.selftest:
     else: ok = ah > aa and (sum(h) / len(h)) > (sum(a) / len(a)); msg = f"anchor human {ah:.3f} vs anchor machine {aa:.3f}; all-control means human {sum(h)/len(h):.3f} vs machine {sum(a)/len(a):.3f} (expect human higher)"
     print(f"self-test [{args.profile}]: {msg} -> {'PASS' if ok else 'FAIL'}"); sys.exit(0 if ok else 1)
 for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows:
-    print(f"{n:40} Binoculars {b:.3f} {v:36} FastDetectGPT {fd:6.2f}  ppl {pp[0]:7.1f}  AI-isms {ss:>3}/100  hidden chars: {us}")
+    e = ens_rows.get(n, (NAN, "?", "", ""))
+    print(f"{n:40} concern {e[1]:<16} combined {e[0]:+.2f}  Binoculars {b:.3f}  FastDetectGPT {fd:6.2f}  ppl {pp[0]:7.1f}  AI-isms {ss:>3}/100  hidden chars: {us}")
 print(f"reports: {out}/index-report.html")

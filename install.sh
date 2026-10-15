@@ -2,13 +2,13 @@
 # ai-text-detector installer. Assumes nothing: no Homebrew, no Python, no Hugging Face CLI.
 # Usage: ./install.sh [--older-models | --profile NAME] [--models-dir PATH]
 #   --older-models  download the original 2023 set (Falcon-7B pair + Qwen2.5/GPT-2, ~33 GB) instead of the default
-#                   hybrid set (Falcon-7B pair + Qwen3.5 small models, ~35 GB). --profile NAME picks any entry in profiles.json.
+#                   current set (Qwen3.5, ~45 GB). --profile NAME picks any entry in profiles.json.
 #   --models-dir  keep the models somewhere else (an external drive, a shared folder). Remembered in .models-dir.
 # Installs uv (a standalone Python manager), a Python 3.12 runtime, the virtualenv, and downloads the models
 # into ./models so the checkout is self-contained. Re-running is safe; finished steps are skipped.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$ROOT"
-PROFILE=hybrid; MODELS_DIR=""
+PROFILE=latest; MODELS_DIR=""
 while [[ $# -gt 0 ]]; do case "$1" in
   --older-models) PROFILE=original; shift;;
   --profile) PROFILE="$2"; shift 2;; --profile=*) PROFILE="${1#--profile=}"; shift;;
@@ -70,4 +70,4 @@ PY
 say "Self-test on the bundled controls (loads all models once; a few minutes)"
 ./detect --selftest --profile "$PROFILE"
 say "Remove models later with ./uninstall.sh"
-say "Done. Score a file with:   ./detect path/to/text.txt$( [[ "$PROFILE" == original ]] && echo " --older-models" || { [[ "$PROFILE" != hybrid ]] && echo " --profile $PROFILE"; } )      (reports land in ./reports)"
+say "Done. Score a file with:   ./detect path/to/text.txt$( [[ "$PROFILE" == original ]] && echo " --older-models" || { [[ "$PROFILE" != latest ]] && echo " --profile $PROFILE"; } )      (reports land in ./reports)"

@@ -11,9 +11,16 @@ that shows where the text sits against known-human and known-machine control tex
 4. **Perplexity and burstiness** (the GPTZero family) under two language models, sentence by sentence.
 5. **Stylometry** without any model: lexical diversity (MATTR, MTLD, hapax ratio), sentence- and paragraph-length variation,
    punctuation and construction rates (em dashes, "not X, but Y", rule-of-three lists, contractions, first person).
-6. **Writing-pattern and hidden-character checks**: AI-isms such as "delve", "in today's fast-paced world" and
+6. **Slop vocabulary** from data-derived lists: words, bigrams, trigrams and phrases measured as over-represented in ten
+   2025 models' essays versus human writing (slop-forensics, MIT) and in LLM fiction (antislop-sampler, Apache 2.0), as
+   rates per thousand words with every match marked in the text.
+7. **A supervised vote**: a 2026 ModernBERT classifier (MIT) trained on 11 million RAID-era texts, used as one capped vote.
+8. **Writing-pattern and hidden-character checks**: AI-isms such as "delve", "in today's fast-paced world" and
    "in conclusion" (rules from the avoid-ai-writing project), plus zero-width characters, bidi controls and lookalike letters
    from other alphabets, each marked inline in the text.
+
+All of it feeds one **combined score and concern level** (low / moderate / high), computed as the evidence-weighted average of
+every measure that actually separates the bundled controls, validated leave-one-out on those controls.
 
 No API keys, no uploads, nothing leaves your machine. The installer assumes nothing: no Homebrew, no Python, no Node.
 
@@ -130,12 +137,17 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 
 ## What a report contains
 
-- A verdict box: the Binoculars score and, under `--older-models`, a verdict against both published thresholds; plus a
-  count of how many directional measures put the file on the human or machine side of the control gap, overall and among
-  the measures that separate the controls well under the profile you ran.
+- An **overall assessment**: a concern level (low, low to moderate, moderate, high) and a combined score with its position
+  among the human and machine controls; under `--older-models` also the Binoculars verdict against the published
+  thresholds; plus a count of how many directional measures put the file on the human or machine side of the control
+  cut-point, overall and among the strong measures.
+- **Which tests say what**: a table of every test with the year it was designed, its source, what this file scored, which
+  side of the control cut-point that lands on, and the test's AUC on the controls; weak or undirected tests are collapsed
+  below it. A violin of the combined score against the controls' leave-one-out scores sits under the table.
 - Summary tiles (Binoculars, Fast-DetectGPT, perplexity, GLTR top-10 share, AI-isms, sentence-length variation, hidden
   characters), each with a bar showing the human and machine control ranges and the file's position.
-- **The shape of the text**: a violin panel for every measure (about 30), human controls in green and machine controls in
+- **The shape of the text**: violin panels, split into **main factors** (the measures with AUC at least 0.80 on the controls
+  under this model set, at least nine) and a collapsed **secondary** set, human controls in green and machine controls in
   red with the individual control points and medians, the cut-point that best separates the two groups as a dotted line,
   and the file as a line across both. The axis always runs with the human direction up; the file line and the panel border
   are green or red for the side of the cut the file lands on; each panel states the AUC with which that measure alone
@@ -144,7 +156,12 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 - Number-line strips for Binoculars and Fast-DetectGPT with threshold lines drawn only when they apply.
 - A **token heat map**: the text with every token coloured by where the real next token sat in the model's ranking
   (top-1, top-10, top-100, top-1000, beyond); hover for rank, log-probability and entropy.
-- The **annotated text**: every AI-ism match marked inline by severity, sentence spans the pattern detector flags, each
+- **Provenance signals**: no-break spaces and whether they sit directly after sentence ends (a pattern typical of text
+  copied from a chat window or word processor), narrow no-break spaces (the character ChatGPT emitted in spring 2025),
+  zero-width characters, curly versus straight quotes, em dashes versus typed double hyphens, the ellipsis character, line
+  separators and soft hyphens, each with what it usually indicates. These say where the text was composed or copied from,
+  not who wrote it.
+- The **annotated text**: every AI-ism match marked inline by severity, slop-list matches dotted, sentence spans the pattern detector flags, each
   hidden or non-standard character shown as a red code-point badge in place, and mixed-script words outlined. The pattern
   and hidden-character tables below it give positions and context.
 - A sentence-by-sentence perplexity table with bars, showing where a text is unusually predictable.
@@ -164,6 +181,11 @@ Each check can run on its own and prints JSON:
 .venv/bin/python features.py draft.txt                      # stylometry, no model
 .venv/bin/python style.py draft.txt
 .venv/bin/python unicode_check.py draft.txt
+```
+
+```sh
+.venv/bin/python slop.py draft.txt                          # slop vocabulary rates and matches
+.venv/bin/python classifier.py draft.txt                    # supervised classifier P(AI)
 ```
 
 `charts.py` holds the SVG builders (violins, strips, position bars, token heat map) and has no dependencies.
@@ -199,6 +221,31 @@ rates of em dashes, semicolons, colons, questions, exclamations, contractions, f
 constructions and three-item lists. These describe register and rhythm; they shift with genre and separate the controls
 only partly, which the report shows honestly through each panel's AUC.
 
+**Slop vocabulary** (`slop.py`) counts hits against lists that were built by measuring which words and phrases LLMs use far
+more often than people do: slop-forensics (Paech, 2025, MIT; essays from ten 2025 models including GPT-4.1-nano, GPT-4o-mini,
+gpt-oss-20b, Gemini 2.5 Flash-Lite, Gemma 3, Llama 4 Scout, Mistral Nemo, Qwen3-30B, Grok 4 Fast and GLM-4.6, versus
+human writing) for single words, bigrams and trigrams, and antislop-sampler (Paech, 2025, Apache 2.0) for 2,500 phrases and
+three construction regexes drawn from creative writing. Rates are per thousand words. On the bundled controls the essay
+word list alone separates human from machine at AUC about 0.8; the lists are vendored in `third_party/` with their licences.
+
+**Supervised classifier** (`classifier.py`): `tabularisai/ai-text-detection`, a ModernBERT-base model (149M parameters,
+MIT) fine-tuned in 2026 on about 11 million rows dominated by the 2024 RAID benchmark. Its own card reports AUROC 0.99 on
+RAID; independent tests of RAID-trained encoders show they collapse on 2025-26 generators (true-positive rate 0.13 at 1%
+false positives on Qwen3 text in one study), and here it misses one of the Claude controls outright. Text is NFKC-normalised
+before scoring, which closes the zero-width and homoglyph attacks. It is one vote in the combined score, weighted like every
+other measure by how well it separates the controls, never a verdict.
+
+**Combined score and concern level.** For every directional measure with AUC at least 0.70 on the controls under the model
+set in use, the report fits the human and machine control values (Gaussian, log scale where the measure is log-scaled) and
+computes the file's log-likelihood ratio between the two, clipped to plus or minus 4. The combined score is the average of
+those ratios weighted by each measure's AUC above chance. It is validated leave-one-out: every control's score is computed
+with that control left out of the fits, which gives the ensemble's own AUC (0.93 to 0.95 on the 67 controls) and the cut-point
+that best separates them. The concern level reads the file's score against those two distributions: *low* below the
+cut-point and not above three quarters of the human controls; *low to moderate* below the cut-point but in the top quarter
+of human scores; *moderate* above the cut-point but below the machine median; *high* above the machine median. It is a
+heuristic over a small control set, stated as such in the report, and a human-side result is weaker evidence than a
+machine-side one for the reasons in the next section.
+
 **Perplexity and burstiness** measure how predictable a text is to a language model and how much that varies from sentence
 to sentence. Machine-generated text tends to be uniformly predictable; human writing swings. The idea goes back to GLTR
 (Gehrmann et al., 2019) and the GPT-2 output-detector work (Solaiman et al., 2019), and underlies commercial tools such as
@@ -217,6 +264,14 @@ plus Latin words containing Cyrillic, Greek or Armenian lookalikes. These can ca
 arrive through ordinary copy-and-paste; they say something about the file, not about who wrote the words.
 
 ## Choosing models
+
+**Policy (October 2026): the default stays on current models.** New users will not install 2023-era Falcon or Qwen2.5
+weights, so the default profile uses current open models even where an older pair scores better on one statistic, and the
+report compensates by ranking tests by their measured reliability and leaning the combined score on the measures that hold
+up. When a newer fully open base/instruct pair appears it should be baked off against the controls (one `profiles.json` entry
+and one control pass; see the bake-off table below) and promoted if it wins. Candidates tried so far: Falcon3-7B (2024),
+SmolLM3-3B (2025), OLMo-3-7B (2025-26); gated families (Gemma, Llama) are excluded because the installer must work without
+a Hugging Face account.
 
 The defaults are deliberate. Binoculars' thresholds were derived for the Falcon-7B pair; the paper shows the method works
 with other observer/performer pairs, but each pair needs its own thresholds, derived on labelled human and machine text. A

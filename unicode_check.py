@@ -41,6 +41,20 @@ def check(text):
     by_kind = {}
     for h in hidden: by_kind[h["kind"]] = by_kind.get(h["kind"], 0) + 1
     return {"chars": len(text), "hidden_total": len(hidden), "hidden_by_kind": by_kind, "hidden": hidden[:200], "mixed_script_words": mixed[:200],
-            "status": "clean" if not hidden and not mixed else "attention"}
+            "status": "clean" if not hidden and not mixed else "attention", "provenance": provenance(text)}
+
+def provenance(text):
+    """Typographic facts that point at where a text was composed or copied from (word processor, chat window, web page,
+    PDF), independent of who wrote the words: no-break spaces and where they sit, narrow no-break spaces, quote style,
+    dash style, ellipsis character, line separators. Counts only; interpretation belongs to the report."""
+    n = len(text) or 1
+    nbsp_pos = [i for i, c in enumerate(text) if c == "\u00a0"]
+    after_end = sum(1 for i in nbsp_pos if i > 0 and text[i - 1] in '.!?\u201d"\u2019')
+    words = max(len(text.split()), 1)
+    return {"nbsp": len(nbsp_pos), "nbsp_after_sentence_end": after_end, "narrow_nbsp": text.count("\u202f"), "zero_width": sum(text.count(c) for c in "\u200b\u200c\u200d\u2060\ufeff"),
+            "curly_quotes": sum(text.count(c) for c in "\u201c\u201d\u2018\u2019"), "straight_quotes": text.count('"') + text.count("'"),
+            "em_dash": text.count("\u2014"), "em_dash_spaced": text.count(" \u2014 "), "en_dash": text.count("\u2013"), "double_hyphen": text.count("--"),
+            "ellipsis_char": text.count("\u2026"), "three_dots": text.count("..."), "line_sep": text.count("\u2028") + text.count("\u2029"), "soft_hyphen": text.count("\u00ad"),
+            "words": words}
 if __name__ == "__main__":
     print(json.dumps({f: check(open(f, encoding="utf-8").read()) for f in sys.argv[1:]}, indent=1, ensure_ascii=False))
