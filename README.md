@@ -46,7 +46,7 @@ text falls on every measure. `--profile smollm3` is a light set (about 13 GB) th
 is the original 2023 Falcon / Qwen2.5 set with the paper's thresholds; `--profile qwen35` is the all-Qwen3.5 set. Any
 combination can be installed side by side.
 
-`./detect` takes any number of text files and an optional `--out DIR`. The models load for the run and are released when it
+`./detect` takes any number of text files and an optional `--out DIR`, plus `--fast`, `--low-memory` and `--profile NAME` (see Memory). The models load for the run and are released when it
 exits; nothing stays resident. The control texts are scored once per model set and cached in `controls/scores/<profile>.json`
 (committed to the repo, keyed by each control's text hash and the profile's model names), so a normal run scores only your
 files; a control is re-scored only when its text or the model set changes, or when you pass `--rescore-controls`. Everything lives inside the checkout (`.venv/`, `models/`), so deleting the folder removes it all.
@@ -54,6 +54,21 @@ files; a control is re-scored only when its text or the model set changes, or wh
 Requirements: macOS or Linux (Windows via WSL2) and a machine with 32 GB or more of memory for the 7B to 9B model pairs
 (Apple Silicon or an NVIDIA GPU; CPU works but is slow). A run on an Apple M5 Max takes two to three minutes, most of it
 loading weights.
+
+### Memory
+
+The default profile loads a 7B observer and a 7B performer together (about 29 GB of weights in bf16), so it wants a machine
+with 32 GB or more. Smaller machines have three options, and the tools pick sensible ones on their own:
+
+| Machine | What happens | Memory | What you lose |
+| --- | --- | --- | --- |
+| 32 GB or more | full default profile | ~30 GB peak | nothing |
+| under 24 GB, any profile | `./detect` switches itself to `--low-memory`: the observer runs over your files first, its probabilities are kept in fp16, then the performer runs; peak is one model at a time | ~15 GB for the 7B pair, ~7 GB for `smollm3` | nothing; same numbers, a little slower |
+| 16 GB | `./install.sh` installs the light profile `smollm3` instead (13 GB of models, scored almost as well in the bake-off) and `./detect` uses it by default | ~7 GB peak | Binoculars 0.83 → 0.81, Fast-DetectGPT 0.76 → 0.79 on the controls |
+| anything, in a hurry | `./detect --fast file.txt` skips the pair entirely: small base models, classifier and deterministic checks only | ~5 GB, about 20 seconds | Binoculars, Fast-DetectGPT and alignment imprint; the strongest measures (token statistics, classifier, shuffle shift) remain |
+
+Control scores for every profile ship in `controls/scores/`, so a small machine never has to score the 67 controls; it only
+scores your files.
 
 ### Disk space
 

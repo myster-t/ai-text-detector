@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-word runner. Usage: ./detect file1.txt [file2.txt ...] [--out DIR] [--older-models]   |   ./detect --selftest
+# One-word runner. Usage: ./detect file1.txt [file2.txt ...] [--out DIR] [--fast] [--low-memory] [--profile NAME]   |   ./detect --selftest
 # Uses the models in ./models and never touches the network.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

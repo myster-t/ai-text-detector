@@ -9,10 +9,10 @@
 # into ./models so the checkout is self-contained. Re-running is safe; finished steps are skipped.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$ROOT"
-PROFILE=olmo3; MODELS_DIR=""
+PROFILE=olmo3; MODELS_DIR=""; EXPLICIT_PROFILE=0
 while [[ $# -gt 0 ]]; do case "$1" in
-  --older-models) PROFILE=original; shift;;
-  --profile) PROFILE="$2"; shift 2;; --profile=*) PROFILE="${1#--profile=}"; shift;;
+  --older-models) PROFILE=original; EXPLICIT_PROFILE=1; shift;;
+  --profile) PROFILE="$2"; EXPLICIT_PROFILE=1; shift 2;; --profile=*) PROFILE="${1#--profile=}"; EXPLICIT_PROFILE=1; shift;;
   --models-dir) MODELS_DIR="$2"; shift 2;; --models-dir=*) MODELS_DIR="${1#--models-dir=}"; shift;;
   -h|--help) sed -n '2,6p' "$0"; exit 0;; *) fail "unknown option $1 (use --older-models, --profile NAME, --models-dir PATH)";; esac; done
 # where the models live: --models-dir > AITD_MODELS_DIR > ./.models-dir file > ./models
@@ -33,6 +33,8 @@ if [[ "$(uname -s)" == Darwin ]]; then
 else
   ram_gb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1048576 )); free_gb=$(df -BG "$MODELS_DIR" | awk 'NR==2{gsub("G","",$4); print $4}')
 fi
+# machines with little memory get the light profile unless one was named explicitly
+if [[ $EXPLICIT_PROFILE -eq 0 && $ram_gb -lt 24 ]]; then PROFILE=smollm3; say "${ram_gb} GB RAM: using the light profile (smollm3, ~13 GB of models). The 7B default needs about 24 GB; ./detect also has --fast and --low-memory."; fi
 case "$PROFILE" in qwen35) NEED=50;; olmo3) NEED=45;; smollm3) NEED=25;; hybrid) NEED=45;; *) NEED=40;; esac
 say "System check: ${ram_gb} GB RAM, ${free_gb} GB free at ${MODELS_DIR} (profile ${PROFILE} needs about ${NEED} GB)"
 (( free_gb >= NEED )) || fail "Need about ${NEED} GB free for the ${PROFILE} models; ${free_gb} GB available at ${MODELS_DIR}. Use --models-dir to put them on another disk."
@@ -70,6 +72,7 @@ PY
 
 # ---- self-test ------------------------------------------------------------------------------------------
 say "Self-test on the bundled controls (loads all models once; a few minutes)"
+printf '%s\n' "$PROFILE" > .profile
 ./detect --selftest --profile "$PROFILE"
 say "Remove models later with ./uninstall.sh"
 say "Done. Score a file with:   ./detect path/to/text.txt$( [[ "$PROFILE" == original ]] && echo " --older-models" || { [[ "$PROFILE" != olmo3 ]] && echo " --profile $PROFILE"; } )      (reports land in ./reports)"

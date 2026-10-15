@@ -20,10 +20,24 @@ ap.add_argument("--profile", default=None, choices=sorted(PROFILES), help="model
 ap.add_argument("--older-models", action="store_true", help="use the original 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (same as --profile original)")
 ap.add_argument("--selftest", action="store_true", help="score the bundled controls and check they separate")
 ap.add_argument("--rescore-controls", action="store_true", help="ignore the cached control scores for this profile and recompute them")
+ap.add_argument("--fast", action="store_true", help="skip the observer/performer pair (Binoculars, Fast-DetectGPT, alignment imprint); small models and classifier only, ~5 GB of memory")
+ap.add_argument("--low-memory", action="store_true", help="load the observer and performer one at a time (halves peak memory; automatic on machines with under 24 GB)")
 args = ap.parse_args()
 if args.older_models and args.profile and args.profile != "original": ap.error("--older-models means --profile original; drop one of them")
-args.profile = "original" if args.older_models else (args.profile or "olmo3")
+_installed = (HERE / ".profile").read_text().strip() if (HERE / ".profile").is_file() else ""
+args.profile = "original" if args.older_models else (args.profile or (_installed if _installed in PROFILES else "olmo3"))
+def _ram_gb():
+    try:
+        import subprocess, platform
+        if platform.system() == "Darwin": return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip()) / 2**30
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30
+    except Exception: return float("nan")
+RAM_GB = _ram_gb()
+if RAM_GB == RAM_GB and RAM_GB < 24 and not args.low_memory and not args.fast:
+    args.low_memory = True; print(f"[memory] {RAM_GB:.0f} GB RAM: loading the model pair one at a time (--low-memory)", file=sys.stderr)
 P = PROFILES[args.profile]; CAL = bool(P.get("calibrated"))
+FAST = bool(args.fast)
+if FAST: CAL = False
 T_ACC, T_FPR = P.get("threshold_accuracy"), P.get("threshold_low_fpr")
 dev = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -99,23 +113,41 @@ for i, (mid, label) in enumerate(P["perplexity_models"]):
     release(tok, m)
 PPL_LABELS = [l for _, l in P["perplexity_models"]]; L0 = PPL_LABELS[0]
 
-# ---- binoculars + Fast-DetectGPT (analytic) from the same two forward passes ----
-log("[binoculars] loading observer + performer"); otok, obs = load(P["observer"], torch.bfloat16); ptok, perf = load(P["performer"], torch.bfloat16)
-def bino(t):
-    enc = otok(t, return_tensors="pt", truncation=True, max_length=512).to(dev); ids = enc.input_ids
-    with torch.no_grad(): lo = obs(input_ids=ids).logits[:, :-1].float(); lp = perf(input_ids=ids).logits[:, :-1].float()
-    v = min(lo.shape[-1], lp.shape[-1]); lo, lp = lo[..., :v], lp[..., :v]; lab = ids[:, 1:]
-    logq, logp = F.log_softmax(lo, -1), F.log_softmax(lp, -1); q = logq.exp()
-    lppl = F.cross_entropy(lp.transpose(1, 2), lab).item(); xppl = (-(q * logp).sum(-1)).mean().item()
-    # Fast-DetectGPT (Bao et al. 2024), analytic form: sampling distribution q = observer, scoring model p = performer.
+# ---- binoculars + Fast-DetectGPT (analytic) + alignment imprint from the observer and performer passes ----
+def _pair_stats(logq, logp, lab):
+    """From observer log-probs (logq) and performer log-probs (logp) over the same tokens: Binoculars ratio, Fast-DetectGPT
+    (Bao et al. 2024, analytic: sampling = observer, scoring = performer) and the unweighted alignment imprint (Wu et al. 2026)."""
+    q = logq.exp(); lppl = -logp.gather(-1, lab[..., None])[..., 0].mean().item(); xppl = (-(q * logp).sum(-1)).mean().item()
     lp_tok = logp.gather(-1, lab[..., None])[..., 0]; mu = (q * logp).sum(-1); var = (q * logp ** 2).sum(-1) - mu ** 2
     fd = ((lp_tok.sum() - mu.sum()) / var.sum().clamp_min(1e-9).sqrt()).item()
-    # Alignment imprint (after Wu et al. 2026, LAPD, unweighted form): how much more the aligned performer likes each token
-    # than its base observer does. Positive = the text follows the aligned model's preferences = more machine-like.
     lq_tok = logq.gather(-1, lab[..., None])[..., 0]; imprint = (lp_tok - lq_tok).mean().item()
     return lppl / xppl, lab.shape[1], fd, imprint
-bino_res = {p: (bino(t) if p in to_score else tuple(NAN if v is None else v for v in cached(p)["bino"])) for p, t in texts.items()}
-release(otok, obs, ptok, perf)
+pair_new = {}
+if FAST:
+    log("[binoculars] skipped (--fast)")
+    pair_new = {p: (NAN, 0, NAN, NAN) for p in to_score}
+elif args.low_memory:
+    log(f"[binoculars] low-memory: observer pass over {len(to_score)} text(s)"); otok, obs = load(P["observer"], torch.bfloat16)
+    keep = {}
+    for p in to_score:
+        enc = otok(texts[p], return_tensors="pt", truncation=True, max_length=512); ids = enc.input_ids.to(dev)
+        with torch.no_grad(): lo = obs(input_ids=ids).logits[:, :-1].float()
+        keep[p] = (ids.cpu(), F.log_softmax(lo, -1).to(torch.float16).cpu()); del lo
+    release(otok, obs); log("[binoculars] low-memory: performer pass"); ptok, perf = load(P["performer"], torch.bfloat16)
+    for p in to_score:
+        ids, logq = keep[p]; ids = ids.to(dev)
+        with torch.no_grad(): lp = perf(input_ids=ids).logits[:, :-1].float()
+        logp = F.log_softmax(lp, -1); logq = logq.to(dev).float(); v = min(logq.shape[-1], logp.shape[-1])
+        pair_new[p] = _pair_stats(logq[..., :v], logp[..., :v], ids[:, 1:]); del lp, logp, logq
+    release(ptok, perf); keep = None
+else:
+    log("[binoculars] loading observer + performer"); otok, obs = load(P["observer"], torch.bfloat16); ptok, perf = load(P["performer"], torch.bfloat16)
+    for p in to_score:
+        enc = otok(texts[p], return_tensors="pt", truncation=True, max_length=512).to(dev); ids = enc.input_ids
+        with torch.no_grad(): lo = obs(input_ids=ids).logits[:, :-1].float(); lp = perf(input_ids=ids).logits[:, :-1].float()
+        v = min(lo.shape[-1], lp.shape[-1]); pair_new[p] = _pair_stats(F.log_softmax(lo[..., :v], -1), F.log_softmax(lp[..., :v], -1), ids[:, 1:])
+    release(otok, obs, ptok, perf)
+bino_res = {p: (pair_new[p] if p in to_score else tuple(NAN if v is None else v for v in cached(p)["bino"])) for p, t in texts.items()}
 
 # ---- supervised classifier (optional, one vote) ----
 clf_res = {}
@@ -128,7 +160,7 @@ if CLF:
     release(ctok, cm)
 
 # ---- write the control cache (only when something was scored) ----
-if need or need_clf:
+if (need or need_clf) and not FAST:
     def _clean(d): return {k: (None if isinstance(v, float) and v != v else v) for k, v in d.items() if k != "tokens"}
     for p in need:
         cache["entries"][ctrl_key[p]] = {"sha": sha(texts[p]), "lm": {l: _clean(lm[(p, l)]) for l in [lb for _, lb in P["perplexity_models"]]},
@@ -147,9 +179,12 @@ slop_res = {p: slop.analyze(t) for p, t in texts.items()}
 # ---- measure registry: (group, key, title, higher_is_human, note, getter, log) ----
 MEAS = [("Model-based signals", "binoculars", "Binoculars score", True, "performer perplexity / observer-performer cross-perplexity", lambda p: bino_res[p][0], False),
         ("Model-based signals", "fastdetectgpt", "Fast-DetectGPT (analytic)", False, "probability curvature; sampling = observer, scoring = performer", lambda p: bino_res[p][2], False),
-        ("Model-based signals", "imprint", "Alignment imprint (performer − observer log-likelihood)", False, "after LAPD, Wu et al. 2026; unweighted", lambda p: bino_res[p][3], False),
+        ("Model-based signals", "imprint", "Alignment imprint (performer − observer log-likelihood)", False, "after LAPD, Wu et al. 2026; unweighted", lambda p: bino_res[p][3], False),]
+if FAST: MEAS = [m for m in MEAS if m[1] != "imprint"]
+MEAS += [
         ("Model-based signals", f"ppl_{L0}", f"Perplexity, {L0}", True, "log scale", lambda p: lm[(p, L0)]["ppl"], True),
         ("Model-based signals", "burst", f"Burstiness, {L0}", True, "sd of sentence perplexity, log scale", lambda p: sent_ppl[p]["sd"], True)]
+if FAST: MEAS = [m for m in MEAS if m[1] not in ("binoculars", "fastdetectgpt")]
 for l in PPL_LABELS[1:]: MEAS.append(("Model-based signals", f"ppl_{l}", f"Perplexity, {l}", True, "log scale", (lambda l: lambda p: lm[(p, l)]["ppl"])(l), True))
 for k, title, hih, note in lmfeat.MEASURES: MEAS.append(("Token statistics", k, title, hih, note, (lambda k: lambda p: lm[(p, L0)][k])(k), False))
 if CLF: MEAS.append(("Model-based signals", "clf_p_ai", "Supervised classifier P(AI) (ModernBERT, 2026)", False, "one vote; strong in-distribution, weak on unseen generators", lambda p: clf_res[p], False))
@@ -340,6 +375,8 @@ for p in targets:
     if CAL:
         box = f"<p><b class={cls_b(b)}>Binoculars {b:.3f}: {esc(verdict)}</b></p><p>Scores below {T_ACC:.4f} read as machine-generated at the paper's accuracy-optimal setting; below {T_FPR:.4f} at the low-false-positive setting. Higher is more human-like. This file is {abs(b-T_ACC):.3f} {'above' if b>=T_ACC else 'below'} the accuracy line.</p>"
         tlines = [(T_FPR, "strict"), (T_ACC, "accuracy")]
+    elif FAST:
+        box = "<p><b>Fast mode:</b> the observer/performer pair was skipped, so Binoculars, Fast-DetectGPT and the alignment imprint are absent; the token statistics, classifier and deterministic checks carry the assessment.</p>"; tlines = []
     else:
         box = f"<p><b>Binoculars {b:.3f}</b> under an uncalibrated model set, so no verdict is given; read the position against the controls.</p>"; tlines = []
     ens = ensemble(p); lvl, lcls, lpos = concern(ens); ens_rows[p.name] = (ens, lvl, lcls, lpos)
@@ -350,6 +387,7 @@ for p in targets:
     box = f"<p><span class='lvl {lcls}'>{esc(lvl)} concern</span> &nbsp; <b>Combined score {ens:+.2f}</b> (control cut-point {ens_cut:+.2f}; {esc(lpos)}).</p>" + box
     box += f"<p>The combined score averages the evidence of {len(ENS_KEYS)} measures (each one's log-likelihood ratio between the machine and human control distributions, weighted by how well it separates the controls); fitted leave-one-out on the controls it separates them with AUC {ens_auc:.2f}. Positive = machine-like. Across the {len(sides)} directional measures, this file lands on the human side of the control cut-point for <b>{nh}</b> and on the machine side for <b>{nm}</b>; among the {len(strong)} strong measures (AUC at least 0.85): human side <b>{sh}</b>, machine side <b>{sm}</b>.</p>"
     def tile(k, label, v, hih, sub=""):
+        if not any(m[1] == k for m in MEAS): return ""
         s = side_text(v, k, hih); scls = "ok" if s == "human" else ("bad" if s == "machine" else "")
         return f'<div class=tile><div class=k>{esc(label)}</div><div class=v>{fmtk(k, v)}</div><div class=s>{sub}{(" · <span class=\"side " + scls + "\">" + s + " side</span>") if s else ""}</div>{charts.position_bar(hv(k), mv(k), v, hih)}</div>'
     tiles = tile("binoculars", "Binoculars", b, True, esc(verdict) if CAL else "no threshold") + tile("fastdetectgpt", "Fast-DetectGPT", fd, False, "curvature; lower = more human") + tile(f"ppl_{L0}", f"Perplexity ({L0})", L["ppl"], True, "higher = less predictable") + tile("top10", "GLTR top-10 share", L["top10"], False, "share of tokens the model expected") + tile("aiisms", "AI-isms", st.get("score"), False, esc(st.get("label", ""))) + tile("sent_len_cv", "Sentence-length variation", ft["sent_len_cv"], True, "coefficient of variation")
@@ -376,8 +414,8 @@ for p in targets:
     vio = "<h3>Main factors</h3><div class=grid>" + "".join(panel(it) for it in primary) + "</div>"
     vio += f"<details class=sec><summary><h3>Secondary measures ({len(secondary)}, weaker on these controls; click to show)</h3></summary><div class=grid>" + "".join(panel(it) for it in secondary) + "</div></details>"
     ens_vio = charts.violin("Combined score (weighted evidence across measures)", ens_h, ens_m, ens, False, note=f"AUC {ens_auc:.2f} leave-one-out; cut {ens_cut:+.2f}", auc=ens_auc, side=("machine" if ens >= ens_cut else "human"), cut=ens_cut)
-    strips = charts.strip("Binoculars score (higher = more human-like)", [(c.name, bino_res[c.resolve()][0], is_human[c.resolve()]) for c in CONTROLS], b, p.name, lines=tlines)
-    strips += charts.strip("Fast-DetectGPT (lower = more human-like)", [(c.name, bino_res[c.resolve()][2], is_human[c.resolve()]) for c in CONTROLS], fd, p.name)
+    strips = "" if FAST else (charts.strip("Binoculars score (higher = more human-like)", [(c.name, bino_res[c.resolve()][0], is_human[c.resolve()]) for c in CONTROLS], b, p.name, lines=tlines)
+        + charts.strip("Fast-DetectGPT (lower = more human-like)", [(c.name, bino_res[c.resolve()][2], is_human[c.resolve()]) for c in CONTROLS], fd, p.name))
     gl = charts.gltr_html(t, L["tokens"]) if L["tokens"] else "<p class=mut>n/a</p>"
     gkey = f'<p class=legend><span class="key g0">top-1 {L["top1"]*100:.0f}%</span><span class="key g1">top-10 {(L["top10"]-L["top1"])*100:.0f}%</span><span class="key g2">top-100 {(L["top100"]-L["top10"])*100:.0f}%</span><span class="key g3">top-1000 {(L["top1000"]-L["top100"])*100:.0f}%</span><span class="key g4">beyond {(1-L["top1000"])*100:.0f}%</span> &nbsp; share in top-10, controls: human {min(hv("top10"))*100:.0f} to {max(hv("top10"))*100:.0f}%, machine {min(mv("top10"))*100:.0f} to {max(mv("top10"))*100:.0f}%</p>'
     ann, nmarks = annotate(t, st, un, slop_res[p])
@@ -428,7 +466,7 @@ for p in targets:
 <p>Every measure is computed for {len(HUMAN)} human and {len(AI)} machine control texts in the same run with the same models. Each panel shows the two control distributions as violins (points are the individual controls, the bar is the median), the dotted line is the cut-point that best separates the two groups, and the dashed line is this file. <b>Up is always the human direction</b>: panels for measures where lower values are more human-like have their axis reversed. Panels are ordered by "AUC", how well that measure alone separates the two control groups (1.0 = perfectly, 0.5 = not at all).</p>
 <div class=pkey><span><i class="kb h"></i> green border: this file is on the <b>human</b> side of the cut</span><span><i class="kb m"></i> red border and halo: this file is on the <b>machine</b> side; skim for these</span><span><i class="kb w"></i> grey, dashed, desaturated: <b>weak measure</b> (AUC under 0.7), it barely separates the controls, so its side is not evidence and is left out of the strong count above</span></div>
 {vio}
-<h2>Number lines with thresholds</h2>{legend}{strips}
+{'' if FAST else '<h2>Number lines with thresholds</h2>' + legend + strips}
 <h2>Token predictability map ({esc(L0)})</h2>
 <p>Each token is coloured by where the real next token sat in the model's ranking (GLTR, Gehrmann et al. 2019). Sampled text is mostly green; human writing reaches further into yellow, orange and purple. Hover a token for its rank, log-probability and the model's entropy at that point. First {L["n"]} tokens scored.</p>
 {gkey}<div class=txt>{gl}</div>
