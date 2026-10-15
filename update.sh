@@ -35,9 +35,11 @@ else
   ( cd "$src" && tar -cf - . ) | tar -xf - -C "$ROOT"
   [[ -n "$latest" ]] && printf '%s\n' "$latest" > .version
   # files that older versions kept at the root and that now live in aitd/ or scripts/
-  for legacy in report.py binoculars.py perplexity.py style.py unicode_check.py features.py lmfeat.py charts.py slop.py classifier.py update-style-rules.sh; do
-    [[ -f "$ROOT/$legacy" && -f "$ROOT/aitd/${legacy%.sh}.py" || -f "$ROOT/scripts/$legacy" ]] && rm -f "$ROOT/$legacy"
+  for legacy in report.py binoculars.py perplexity.py style.py unicode_check.py features.py lmfeat.py charts.py slop.py classifier.py; do
+    [[ -f "$ROOT/$legacy" && -f "$ROOT/aitd/$legacy" ]] && rm -f "$ROOT/$legacy"
   done
+  [[ -f "$ROOT/update-style-rules.sh" && -f "$ROOT/scripts/update-style-rules.sh" ]] && rm -f "$ROOT/update-style-rules.sh"
+  rm -rf "$ROOT/__pycache__"
   chmod +x detect install.sh uninstall.sh update.sh scripts/update-style-rules.sh 2>/dev/null || true
 fi
 
