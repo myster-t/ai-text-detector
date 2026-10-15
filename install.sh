@@ -35,10 +35,8 @@ else
 fi
 # machines with little memory get the light profile unless one was named explicitly
 if [[ $EXPLICIT_PROFILE -eq 0 && $ram_gb -lt 24 ]]; then PROFILE=smollm3; say "${ram_gb} GB RAM: using the light profile (smollm3, ~13 GB of models). The 7B default needs about 24 GB; ./detect also has --fast and --low-memory."; fi
-case "$PROFILE" in qwen35) NEED=50;; olmo3) NEED=45;; smollm3) NEED=25;; hybrid) NEED=45;; *) NEED=40;; esac
-say "System check: ${ram_gb} GB RAM, ${free_gb} GB free at ${MODELS_DIR} (profile ${PROFILE} needs about ${NEED} GB)"
-(( free_gb >= NEED )) || fail "Need about ${NEED} GB free for the ${PROFILE} models; ${free_gb} GB available at ${MODELS_DIR}. Use --models-dir to put them on another disk."
-(( ram_gb >= 32 )) || printf 'warning: the Falcon-7B pair needs ~29 GB of memory during a run; with %s GB this will be slow or fail.\n' "$ram_gb"
+say "System check: ${ram_gb} GB RAM, ${free_gb} GB free at ${MODELS_DIR}; profile ${PROFILE} (the exact download size is computed below from what is still missing)"
+(( ram_gb >= 24 )) || printf 'note: with %s GB of memory ./detect runs the model pair one model at a time (--low-memory) and --fast is available.\n' "$ram_gb"
 
 # ---- uv (installs its own Python; no Homebrew, no sudo) --------------------------------------------------
 export PATH="$HOME/.local/bin:$PATH"
@@ -57,17 +55,27 @@ uv pip install --python .venv/bin/python --quiet -r requirements.txt
 # ---- models (into ./models, so the folder is portable) --------------------------------------------------
 say "Models for profile ${PROFILE} into ${MODELS_DIR} (skipped when already present)"
 export HF_HOME="$MODELS_DIR"; mkdir -p "$HF_HOME"
-PROFILE="$PROFILE" .venv/bin/python - <<'PY'
-import os, json
+PROFILE="$PROFILE" MODELS_DIR="$MODELS_DIR" .venv/bin/python - <<'PY' || exit 1
+import os, json, shutil, sys
 from huggingface_hub import snapshot_download
 P = json.load(open("profiles.json"))[os.environ["PROFILE"]]
 patterns = ["*.safetensors", "*.json", "*.txt", "tokenizer*", "*.jinja"]
-MODELS = {m: patterns for m in [P["observer"], P["performer"]] + [m for m, _ in P["perplexity_models"]] + ([P["classifier"]] if P.get("classifier") else [])}
-for repo, patterns in MODELS.items():
-    try:
-        snapshot_download(repo, allow_patterns=patterns, local_files_only=True); print(f"  {repo}: present"); continue
-    except Exception: pass
-    print(f"  {repo}: downloading"); snapshot_download(repo, allow_patterns=patterns)
+MODELS = [P["observer"], P["performer"]] + [m for m, _ in P["perplexity_models"]] + ([P["classifier"]] if P.get("classifier") else [])
+# approximate download sizes in GB (bf16 safetensors); unknown repos assume 15
+SIZE = {"allenai/Olmo-3-1025-7B": 15, "allenai/Olmo-3-7B-Instruct": 15, "HuggingFaceTB/SmolLM3-3B-Base": 6.5, "HuggingFaceTB/SmolLM3-3B": 6.5,
+        "Qwen/Qwen3.5-9B-Base": 20, "Qwen/Qwen3.5-9B": 20, "Qwen/Qwen3.5-2B-Base": 5, "Qwen/Qwen3.5-0.8B-Base": 2, "tiiuae/falcon-7b": 15,
+        "tiiuae/falcon-7b-instruct": 15, "tiiuae/Falcon3-7B-Base": 15, "tiiuae/Falcon3-7B-Instruct": 15, "Qwen/Qwen2.5-1.5B": 3.5,
+        "openai-community/gpt2": 1, "tabularisai/ai-text-detection": 1}
+present, missing = [], []
+for repo in MODELS:
+    try: snapshot_download(repo, allow_patterns=patterns, local_files_only=True); present.append(repo)
+    except Exception: missing.append(repo)
+need = sum(SIZE.get(r, 15) for r in missing); free = shutil.disk_usage(os.environ["MODELS_DIR"]).free / 2**30
+for r in present: print(f"  {r}: present")
+print(f"  still to download: {len(missing)} model(s), about {need:.0f} GB; {free:.0f} GB free")
+if free < need + 1: sys.exit(f"error: need about {need:.0f} GB free for the missing models at {os.environ['MODELS_DIR']}; {free:.0f} GB available. Free space or use --models-dir to put the models on another disk.")
+for repo in missing:
+    print(f"  {repo}: downloading", flush=True); snapshot_download(repo, allow_patterns=patterns)
 PY
 
 # ---- self-test ------------------------------------------------------------------------------------------
