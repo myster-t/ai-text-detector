@@ -33,7 +33,7 @@ No API keys, no uploads, nothing leaves your machine. The installer assumes noth
 git clone https://github.com/myster-t/ai-text-detector.git
 cd ai-text-detector
 ./install.sh                    # installs a Python runtime, the packages and ~36 GB of current models; ends with a self-test
-./detect essay.txt              # writes reports/essay-report.html and reports/index-report.html
+./detect essay.txt              # writes ~/Downloads/ai-text-report_<date>_<time>_essay.html
 ./install.sh --older-models     # optional: the 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (~33 GB)
 ./detect essay.txt --older-models
 ```
@@ -46,7 +46,12 @@ text falls on every measure. `--profile smollm3` is a light set (about 13 GB) th
 is the original 2023 Falcon / Qwen2.5 set with the paper's thresholds; `--profile qwen35` is the all-Qwen3.5 set. Any
 combination can be installed side by side.
 
-`./detect` takes any number of text files and an optional `--out DIR`, plus `--fast`, `--low-memory` and `--profile NAME` (see Memory).
+`./detect` takes any number of text files or Google Docs links and writes **one self-contained HTML file per run** into
+`~/Downloads` (or `./reports` if there is no Downloads folder), named `ai-text-report_<date>_<time>_<first text>.html`, so
+no run ever overwrites another and the date is in the name. The file opens with an overview of every text and its concern
+level, a sticky navigation bar, and then one collapsible section per text (or per Google Docs tab) with the full report.
+`--out DIR` changes the folder; `--out path.html` sets the exact file. Also `--fast`, `--low-memory` and `--profile NAME`
+(see Memory).
 
 **Google Docs.** Pass a document link instead of a file and every tab becomes its own report:
 
@@ -147,7 +152,7 @@ In testing on nine polished personal essays written by a student, Binoculars sco
 well on the human side, while a commercial-style trained classifier had flagged all nine at the edge of its threshold. That
 disagreement is the reason this repo runs several methods and shows controls beside every result.
 
-The rendered reports for both controls are in [`examples/`](examples/).
+A rendered report for both anchor controls is [`examples/report.html`](examples/report.html).
 
 ## Model profiles
 
@@ -178,7 +183,10 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 
 ## What a report contains
 
-- An **overall assessment**: a concern level (low, low to moderate, moderate, high) and a combined score with its position
+- An **overview** at the top: every text in the run with its concern level and combined score, links to each section, the
+  control number lines, the full comparison table, and (collapsed) the ranking of measures by how well they separate the
+  controls.
+- Per text, an **overall assessment**: a concern level (low, low to moderate, moderate, high) and a combined score with its position
   among the human and machine controls; under `--older-models` also the Binoculars verdict against the published
   thresholds; plus a count of how many directional measures put the file on the human or machine side of the control
   cut-point, overall and among the strong measures.
@@ -209,7 +217,8 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 - Every measurement for the file and every control in a collapsed table (click to open), and a methods and limits section.
 - The index page lists all files, the control table, and a ranking of all measures by how well they separate the controls.
 
-Reports are self-contained HTML (no scripts, fonts or external assets), print to A4, and render in light and dark mode.
+The report is a single self-contained HTML file (no scripts, fonts or external assets), prints to A4, and renders in light
+and dark mode; a run over ten texts is a few megabytes.
 
 ## Layout
 
@@ -219,7 +228,7 @@ profiles.json, requirements.txt               model sets and Python packages
 aitd/                                         the code (report.py is the entry point; each check is also a standalone script)
 controls/                                     the 67 control texts, their manifest, and the cached scores per profile
 third_party/                                  vendored rule and vocabulary lists with their licences
-examples/                                     two rendered reports
+examples/                                     a rendered report (both anchor controls)
 scripts/                                      maintenance scripts (refresh the vendored style rules)
 models/, .venv/, reports/                     created by the installer and by runs; not part of the repo
 ```

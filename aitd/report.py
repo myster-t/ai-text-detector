@@ -16,7 +16,7 @@ PROFILES = json.loads((HERE / "profiles.json").read_text())
 ap = argparse.ArgumentParser(description="Score text files for machine generation and write HTML reports.")
 ap.add_argument("files", nargs="*", help="UTF-8 text files to score, or Google Docs links (shared as 'Anyone with the link'); each tab becomes one report")
 ap.add_argument("--tabs", default=None, help="comma-separated Google Docs tab ids (the tab= value in the browser URL, e.g. t.0,t.3k2x9) when they cannot be discovered")
-ap.add_argument("--out", default="reports", help="output folder (default: ./reports)")
+ap.add_argument("--out", default=None, help="where the single report file goes: a folder (default ~/Downloads, else ./reports) or a .html path")
 ap.add_argument("--profile", default=None, choices=sorted(PROFILES), help="model set by name (default: olmo3)")
 ap.add_argument("--older-models", action="store_true", help="use the original 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (same as --profile original)")
 ap.add_argument("--selftest", action="store_true", help="score the bundled controls and check they separate")
@@ -44,22 +44,36 @@ dev = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_a
 
 HUMAN = sorted((HERE / "controls" / "human").glob("*.txt")); AI = sorted((HERE / "controls" / "ai").glob("*.txt")); CONTROLS = HUMAN + AI
 ANCHOR_H, ANCHOR_A = HERE / "controls" / "human" / "stewart-letter-1913.txt", HERE / "controls" / "ai" / "claude-marketing-paragraph.txt"
-if args.selftest: args.files = [str(ANCHOR_H), str(ANCHOR_A)]; args.out = str(HERE / "reports" / f"selftest-{args.profile}")
+if args.selftest: args.files = [str(ANCHOR_H), str(ANCHOR_A)]; args.out = str(HERE / "reports" / f"selftest-{args.profile}.html")
 if not args.files: ap.error("give at least one text file, or --selftest")
-out = pathlib.Path(args.out).expanduser(); out.mkdir(parents=True, exist_ok=True)
-# Google Docs links: fetch each tab as plain text into the output folder and score those files
-import gdoc
+import gdoc, tempfile, datetime as _dt
 def log(msg): print(msg, file=sys.stderr, flush=True)
-_files = []
+# Google Docs links: fetch each tab as plain text (kept in a scratch folder; the text is embedded in the report)
+_files, display = [], {}
+_scratch = None
 for f in args.files:
     if re.match(r"https?://docs\.google\.com/", f):
         try: parts = gdoc.fetch(f, args.tabs)
         except Exception as e: sys.exit(f"Google Doc {f}: {e}")
+        _scratch = _scratch or pathlib.Path(tempfile.mkdtemp(prefix="aitd-gdoc-"))
         for label, text in parts:
-            p = out / (gdoc.safe_name(label) + ".txt"); p.write_text(text + "\n"); _files.append(str(p)); log(f"[gdoc] {label}: {len(text.split())} words -> {p.name}")
+            p = _scratch / (gdoc.safe_name(label) + ".txt"); p.write_text(text + "\n"); _files.append(str(p)); display[p.resolve()] = label
+            log(f"[gdoc] {label}: {len(text.split())} words")
     else: _files.append(f)
 args.files = _files
 targets = [pathlib.Path(f).expanduser().resolve() for f in args.files]
+for p in targets: display.setdefault(p, p.name)
+# one dated, self-contained report file per run; never overwrites an earlier run
+_stamp = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+_name = re.sub(r"[^A-Za-z0-9._-]+", "-", re.sub(r"\.txt$", "", display[targets[0]].split(" - tab ")[0]) if targets else "report").strip("-")[:40]
+if len(targets) > 1 and not all(" - tab " in display[t] for t in targets): _name += f"-and-{len(targets)-1}-more"
+if args.out and args.out.lower().endswith(".html"): out_file = pathlib.Path(args.out).expanduser()
+else:
+    out_dir = pathlib.Path(args.out).expanduser() if args.out else (pathlib.Path.home() / "Downloads" if (pathlib.Path.home() / "Downloads").is_dir() else HERE / "reports")
+    out_file = out_dir / f"ai-text-report_{_stamp}_{_name}.html"
+    k = 2
+    while out_file.exists(): out_file = out_dir / f"ai-text-report_{_stamp}_{_name}-{k}.html"; k += 1
+out_file.parent.mkdir(parents=True, exist_ok=True); out = out_file.parent
 for p in targets:
     if not p.is_file(): sys.exit(f"not a file: {p}")
 texts = {p: open(p, encoding="utf-8").read().strip() for p in targets + [c.resolve() for c in CONTROLS]}
@@ -317,6 +331,9 @@ h1{font-size:1.75rem;margin:0 0 4px;text-wrap:balance}h2{font-size:1.25rem;margi
 details.sec summary{cursor:pointer;list-style:none;margin:18px 0 8px}details.sec summary h3{display:inline;font-size:1rem}details.sec summary::-webkit-details-marker{display:none}details.sec summary h3::before{content:"▸ ";color:var(--mut)}details.sec[open] summary h3::before{content:"▾ "}
 .lvl{display:inline-block;padding:2px 10px;border-radius:6px;font-weight:700;color:#fff}.lvl.ok{background:var(--hum)}.lvl.warn{background:var(--warn)}.lvl.bad{background:var(--mach)}
 td.side-h{color:var(--ok);font-weight:600}td.side-m{color:var(--bad);font-weight:600}td.side-w{color:var(--mut)}
+nav.top{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--rule);padding:8px 16px;display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.86rem}nav.top a{text-decoration:none}nav.top a:hover{text-decoration:underline}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;background:var(--mut)}.dot.ok{background:var(--hum)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--mach)}
+section.file{margin-top:28px;border-top:3px solid var(--rule);padding-top:8px}section.file>details>summary{cursor:pointer;list-style:none;padding:10px 0}section.file>details>summary::-webkit-details-marker{display:none}section.file>details>summary h1{display:inline;font-size:1.35rem;margin:0 10px 0 0}section.file>details>summary::before{content:"▸ ";color:var(--mut)}section.file>details[open]>summary::before{content:"▾ "}
 details.all summary{cursor:pointer;list-style:none}details.all summary h2{display:inline-block;margin-top:38px}details.all summary::-webkit-details-marker{display:none}details.all summary h2::before{content:"▸ ";color:var(--mut)}details.all[open] summary h2::before{content:"▾ "}
 .pkey{display:flex;flex-wrap:wrap;gap:10px 18px;margin:8px 0 14px;font-size:.86rem}.pkey span{display:inline-flex;align-items:center;gap:7px}.kb{display:inline-block;width:26px;height:16px;border-radius:4px;border:2px solid var(--rule);background:var(--panel)}
 .kb.h{border-color:var(--hum)}.kb.m{border-color:var(--mach);box-shadow:0 0 0 3px color-mix(in srgb,var(--mach) 25%,transparent)}.kb.w{border-style:dashed;border-color:var(--mut);filter:saturate(.15)}
@@ -383,11 +400,12 @@ def annotate(text, st, un, sl=None):
         out.append(f'<span class=sent title="sentence span flagged by the pattern detector">{seg}</span>' if in_sent[j] else seg); j = k
     return "".join(out), len(set((s, e) for s, e, _, _ in marks))
 
-summary_rows = []; ens_rows = {}
-for p in targets:
+summary_rows = []; ens_rows = {}; sections = []
+def sid_of(name): return "f-" + re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower()[:60]
+for fi, p in enumerate(targets):
     t = texts[p]; b, ntok, fd, imp = bino_res[p]; st, un, ft = style_res[p], uni_res[p], feat_res[p]; q = sent_ppl[p]; L = lm[(p, L0)]
     verdict = verdict_of(b)
-    summary_rows.append((p.name, len(t.split()), b, verdict, [lm[(p, l)]["ppl"] for l in PPL_LABELS], q["sd"], st.get("score"), st.get("label"), un["status"], un["hidden_total"], len(un["mixed_script_words"]), fd))
+    summary_rows.append((display[p], len(t.split()), b, verdict, [lm[(p, l)]["ppl"] for l in PPL_LABELS], q["sd"], st.get("score"), st.get("label"), un["status"], un["hidden_total"], len(un["mixed_script_words"]), fd))
     if CAL:
         box = f"<p><b class={cls_b(b)}>Binoculars {b:.3f}: {esc(verdict)}</b></p><p>Scores below {T_ACC:.4f} read as machine-generated at the paper's accuracy-optimal setting; below {T_FPR:.4f} at the low-false-positive setting. Higher is more human-like. This file is {abs(b-T_ACC):.3f} {'above' if b>=T_ACC else 'below'} the accuracy line.</p>"
         tlines = [(T_FPR, "strict"), (T_ACC, "accuracy")]
@@ -395,7 +413,7 @@ for p in targets:
         box = "<p><b>Fast mode:</b> the observer/performer pair was skipped, so Binoculars, Fast-DetectGPT and the alignment imprint are absent; the token statistics, classifier and deterministic checks carry the assessment.</p>"; tlines = []
     else:
         box = f"<p><b>Binoculars {b:.3f}</b> under an uncalibrated model set, so no verdict is given; read the position against the controls.</p>"; tlines = []
-    ens = ensemble(p); lvl, lcls, lpos = concern(ens); ens_rows[p.name] = (ens, lvl, lcls, lpos)
+    ens = ensemble(p); lvl, lcls, lpos = concern(ens); ens_rows[display[p]] = (ens, lvl, lcls, lpos)
     sides = [(k, side_text(vals[(p, k)], k, hih)) for _, k, _, hih, _, _, _ in MEAS if hih is not None]
     nh, nm = sum(1 for _, s in sides if s == "human"), sum(1 for _, s in sides if s == "machine")
     strong = [(k, s) for k, s in sides if separation(k) == separation(k) and separation(k) >= 0.85]
@@ -469,8 +487,8 @@ for p in targets:
     rows = []
     for cp, label, hum in [(p, p.name + " (this file)", None)] + [(c.resolve(), c.name, is_human[c.resolve()]) for c in CONTROLS if c.resolve() != p]:
         rows.append(f"<tr{' class=tgt' if cp == p else ''}><td>{esc(label)}</td><td>{'' if hum is None else ('human' if hum else 'machine')}</td><td class=n>{len(texts[cp].split())}</td>" + "".join(f"<td class=n>{fmtk(k, vals[(cp, k)])}</td>" for k, _ in mkeys) + "</tr>")
-    doc = f"""<!DOCTYPE html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>AI text report: {esc(p.stem)}</title><style>{CSS}</style></head><body><main>
-<h1>AI text report</h1><p class=by>{esc(p.name)} · {len(t.split())} words · run {now} · profile <b>{esc(args.profile)}</b>{'' if CAL else ' (uncalibrated)'} · {esc(model_line)} · all processing local · <a href="index-report.html">all files</a></p>
+    doc = f"""<section class=file id="{sid_of(display[p])}"><details{' open' if fi == 0 else ''}><summary><h1>{esc(display[p])}</h1> <span class="lvl {lcls}">{esc(lvl)} concern</span> <span class=mut>combined {ens:+.2f} · {len(t.split())} words · click to {'collapse' if fi == 0 else 'expand'}</span></summary>
+<p class=by>{esc(display[p])} · {len(t.split())} words · run {now} · profile <b>{esc(args.profile)}</b>{'' if CAL else ' (uncalibrated)'} · {esc(model_line)} · all processing local · <a href="#overview">back to overview</a></p>
 <div class=verdict>{box}</div>
 <div class=tiles>{tiles}</div>
 <p class=legend>Each tile's bar shows the control ranges (<span class=sw style="background:var(--hum)"></span>human, <span class=sw style="background:var(--mach)"></span>machine) and this file as a diamond.</p>
@@ -508,26 +526,31 @@ for p in targets:
 <p><b>Token statistics</b> (GLTR, Gehrmann et al. 2019; DetectLLM log-likelihood/log-rank ratio, Su et al. 2023): where each real token sat in the {esc(L0)} model's ranking, and how spread the model's prediction was. <b>Perplexity and burstiness</b>: how predictable the text is and how much that varies sentence to sentence. Weak on short texts, formulaic genres and text dense with names or numbers.</p>
 <p><b>Stylometry</b> (lexical diversity: MATTR, Covington &amp; McFall 2010; MTLD, McCarthy &amp; Jarvis 2010; sentence and paragraph rhythm; punctuation and construction rates): model-free descriptions of register. They separate the controls only partly and shift with genre, so read them as context. <b>Writing patterns and hidden characters</b>: deterministic checks that need no model.</p>
 <p>No detector proves authorship. Edited or paraphrased machine text can pass, formal human writing can be flagged, and every model-based score depends on the specific models used. Read these numbers alongside drafts, sources and the writer's history.</p>
-</main></body></html>"""
-    (out / f"{p.stem}-report.html").write_text(doc)
+</details></section>"""
+    sections.append(doc)
 
 # ---- index ----
 cpb = [(c.name, bino_res[c.resolve()][0], is_human[c.resolve()]) for c in CONTROLS]; cpf = [(c.name, bino_res[c.resolve()][2], is_human[c.resolve()]) for c in CONTROLS]
 idx_strip = charts.strip("Binoculars score, controls (higher = more human-like)", cpb, NAN, "", lines=([(T_FPR, "strict"), (T_ACC, "accuracy")] if CAL else []))
 idx_strip += charts.strip("Fast-DetectGPT, controls (lower = more human-like)", cpf, NAN, "")
-tmarks = "".join(f'<li><a href="{esc(n)[:-4]}-report.html"><b>{esc(n)}</b></a>: <span class="lvl {ens_rows[n][2]}">{esc(ens_rows[n][1])} concern</span> combined {ens_rows[n][0]:+.2f}; Binoculars {b:.3f}, Fast-DetectGPT {fd:.2f}</li>' for n, _, b, v, _, _, _, _, _, _, _, fd in summary_rows)
+tmarks = "".join(f'<li><a href="#{sid_of(n)}"><b>{esc(n)}</b></a>: <span class="lvl {ens_rows[n][2]}">{esc(ens_rows[n][1])} concern</span> combined {ens_rows[n][0]:+.2f}; Binoculars {b:.3f}, Fast-DetectGPT {fd:.2f}</li>' for n, _, b, v, _, _, _, _, _, _, _, fd in summary_rows)
+nav = "".join(f'<a href="#{sid_of(n)}"><span class="dot {ens_rows[n][2]}"></span>{esc(n if len(n) <= 42 else n[:40] + "…")}</a>' for n, *_ in summary_rows)
 hdr = f"<tr><th>File</th><th class=n>Words</th><th class=n>Binoculars</th><th>Verdict</th><th class=n>Fast-DetectGPT</th>{''.join(f'<th class=n>ppl {esc(l)}</th>' for l in PPL_LABELS)}<th class=n>Burstiness</th><th class=n>AI-isms</th><th>Hidden chars</th></tr>"
-idx_rows = "".join(f"<tr><td><a href='{esc(n)[:-4]}-report.html'>{esc(n)}</a></td><td class=n>{w}</td><td class='n {cls_b(b)}'>{b:.3f}</td><td>{esc(v)}</td><td class=n>{fd:.2f}</td>{''.join(f'<td class=n>{fmt(x)}</td>' for x in pp)}<td class=n>{fmt(sd)}</td><td class=n>{ss}</td><td>{esc(us)}{(' (' + str(uh + um) + ')') if us != 'clean' else ''}</td></tr>" for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows)
+idx_rows = "".join(f"<tr><td><a href='#{sid_of(n)}'>{esc(n)}</a></td><td class=n>{w}</td><td class='n {cls_b(b)}'>{b:.3f}</td><td>{esc(v)}</td><td class=n>{fd:.2f}</td>{''.join(f'<td class=n>{fmt(x)}</td>' for x in pp)}<td class=n>{fmt(sd)}</td><td class=n>{ss}</td><td>{esc(us)}{(' (' + str(uh + um) + ')') if us != 'clean' else ''}</td></tr>" for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows)
 ctrl_rows = "".join(f"<tr><td class=mut>control ({'human' if is_human[c.resolve()] else 'machine'}): {esc(c.name)}</td><td class=n>{len(texts[c.resolve()].split())}</td><td class='n {cls_b(bino_res[c.resolve()][0])}'>{bino_res[c.resolve()][0]:.3f}</td><td></td><td class=n>{bino_res[c.resolve()][2]:.2f}</td>{''.join(f'<td class=n>{fmt(lm[(c.resolve(), l)][chr(112)+chr(112)+chr(108)])}</td>' for l in PPL_LABELS)}<td class=n>{fmt(sent_ppl[c.resolve()]['sd'])}</td><td class=n>{style_res[c.resolve()].get('score')}</td><td>{esc(uni_res[c.resolve()]['status'])}</td></tr>" for c in CONTROLS)
 sep_rows = "".join(f"<tr><td>{esc(grp)}</td><td>{esc(title)}</td><td class=n>{separation(k):.2f}</td><td>{'higher' if hih else ('lower' if hih is False else 'no claim')}</td></tr>" for grp, k, title, hih, _, _, _ in sorted(MEAS, key=lambda m: -(separation(m[1]) if separation(m[1]) == separation(m[1]) else 0)))
-(out / "index-report.html").write_text(f"""<!DOCTYPE html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>AI text reports</title><style>{CSS}</style></head><body><main>
-<h1>AI text reports</h1><p class=by>{len(targets)} files · run {now} · profile <b>{esc(args.profile)}</b>{'' if CAL else ' (uncalibrated: no thresholds, no verdicts)'} · {esc(model_line)} · all local</p>
+out_file.write_text(f"""<!DOCTYPE html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>AI text report {esc(_stamp)} {esc(_name)}</title><style>{CSS}</style></head><body>
+<nav class=top><a href="#overview"><b>Overview</b></a>{nav}</nav><main>
+<section id="overview"><h1>AI text report</h1><p class=by>{len(targets)} {'texts' if len(targets) != 1 else 'text'} · run {esc(_stamp.replace('_', ' '))} · profile <b>{esc(args.profile)}</b>{'' if CAL else ' (uncalibrated: no thresholds, no verdicts)'} · {esc(model_line)} · all local · this file is self-contained</p>
 <ul>{tmarks}</ul>{legend}{idx_strip}
-<div class=wrap><table>{hdr}{idx_rows}{ctrl_rows}</table></div>
-<p>{('Binoculars: below ' + f'{T_ACC:.4f}' + ' reads as machine-generated (accuracy-optimal), below ' + f'{T_FPR:.4f}' + ' at the low-false-positive setting.') if CAL else 'This profile has no published thresholds. Compare each file with the control ranges.'} Each file links to its own report with violins, token map, annotated text and sentence-level detail.</p>
-<h2>Which measures separate the controls under this profile</h2>
+<div class=wrap><table>{hdr}{idx_rows}</table></div>
+<details class=sec><summary><h3>The {len(CONTROLS)} controls on the same measures (click to show)</h3></summary><div class=wrap><table>{hdr}{ctrl_rows}</table></div></details>
+<p>{('Binoculars: below ' + f'{T_ACC:.4f}' + ' reads as machine-generated (accuracy-optimal), below ' + f'{T_FPR:.4f}' + ' at the low-false-positive setting.') if CAL else 'This profile has no published thresholds. Compare each text with the control ranges.'} Each text below has its own section (click its heading to expand or collapse) with the test table, violins, token map, annotated text and sentence-level detail.</p>
+<details class=sec><summary><h3>Which measures separate the controls under this profile (click to show)</h3></summary>
 <p>AUC = probability that a random human control sits on the human side of a random machine control for that measure alone. 1.0 is perfect separation, 0.5 is none, below 0.5 means the controls run opposite to the expected direction. The "human side" column says which direction counts as human.</p>
-<div class=wrap><table><tr><th>Group</th><th>Measure</th><th class=n>AUC</th><th>Human side</th></tr>{sep_rows}</table></div>
+<div class=wrap><table><tr><th>Group</th><th>Measure</th><th class=n>AUC</th><th>Human side</th></tr>{sep_rows}</table></div></details>
+</section>
+{''.join(sections)}
 </main></body></html>""")
 
 if args.selftest:
@@ -544,4 +567,4 @@ if args.selftest:
 for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows:
     e = ens_rows.get(n, (NAN, "?", "", ""))
     print(f"{n:40} concern {e[1]:<16} combined {e[0]:+.2f}  Binoculars {b:.3f}  FastDetectGPT {fd:6.2f}  ppl {pp[0]:7.1f}  AI-isms {ss:>3}/100  hidden chars: {us}")
-print(f"reports: {out}/index-report.html")
+print(f"report: {out_file}")
