@@ -518,10 +518,15 @@ sep_rows = "".join(f"<tr><td>{esc(grp)}</td><td>{esc(title)}</td><td class=n>{se
 </main></body></html>""")
 
 if args.selftest:
-    h = [bino_res[c][0] for c in HC]; a = [bino_res[c][0] for c in MC]
-    ah, aa = bino_res[ANCHOR_H.resolve()][0], bino_res[ANCHOR_A.resolve()][0]
-    if CAL: ok = ah >= T_ACC and aa < T_FPR; msg = f"anchor human control {ah:.3f} (expect >= {T_ACC:.4f}), anchor machine control {aa:.3f} (expect < {T_FPR:.4f}); all-control means human {sum(h)/len(h):.3f} vs machine {sum(a)/len(a):.3f}"
-    else: ok = ah > aa and (sum(h) / len(h)) > (sum(a) / len(a)); msg = f"anchor human {ah:.3f} vs anchor machine {aa:.3f}; all-control means human {sum(h)/len(h):.3f} vs machine {sum(a)/len(a):.3f} (expect human higher)"
+    ah, aa = ANCHOR_H.resolve(), ANCHOR_A.resolve()
+    if CAL:
+        bh, ba = bino_res[ah][0], bino_res[aa][0]; h = [bino_res[c][0] for c in HC]; a = [bino_res[c][0] for c in MC]
+        ok = bh >= T_ACC and ba < T_FPR
+        msg = f"Binoculars anchor human {bh:.3f} (expect >= {T_ACC:.4f}), anchor machine {ba:.3f} (expect < {T_FPR:.4f}); control means human {sum(h)/len(h):.3f} vs machine {sum(a)/len(a):.3f}"
+    else:
+        eh, ea = ens_rows[ANCHOR_H.name][0], ens_rows[ANCHOR_A.name][0]
+        ok = eh < ens_cut <= ea and ens_auc >= 0.80
+        msg = f"combined score: anchor human {eh:+.2f} (expect below the cut {ens_cut:+.2f}), anchor machine {ea:+.2f} (expect at or above it); ensemble leave-one-out AUC on the {len(CONTROLS)} controls {ens_auc:.2f} (expect >= 0.80); levels {ens_rows[ANCHOR_H.name][1]} / {ens_rows[ANCHOR_A.name][1]}"
     print(f"self-test [{args.profile}]: {msg} -> {'PASS' if ok else 'FAIL'}"); sys.exit(0 if ok else 1)
 for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows:
     e = ens_rows.get(n, (NAN, "?", "", ""))

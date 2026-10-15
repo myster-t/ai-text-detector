@@ -72,8 +72,11 @@ for repo in MODELS:
     except Exception: missing.append(repo)
 need = sum(SIZE.get(r, 15) for r in missing); free = shutil.disk_usage(os.environ["MODELS_DIR"]).free / 2**30
 for r in present: print(f"  {r}: present")
-print(f"  still to download: {len(missing)} model(s), about {need:.0f} GB; {free:.0f} GB free")
-if free < need + 1: sys.exit(f"error: need about {need:.0f} GB free for the missing models at {os.environ['MODELS_DIR']}; {free:.0f} GB available. Free space or use --models-dir to put the models on another disk.")
+print(f"  still to download: {len(missing)} model(s), about {need:.0f} GB; {free:.0f} GB immediately free" + (" (macOS counts purgeable space as used; it is released as the download grows)" if sys.platform == "darwin" else ""))
+if missing and not present:
+    print("  note: no models found in this folder. If you installed before in another folder (for example an earlier unzip), point this one at it\n"
+          "        with ./install.sh --models-dir /path/to/old-folder/models, or keep models outside any unzip with --models-dir ~/ai-text-models.")
+if free < need + 1: print(f"  warning: only {free:.0f} GB immediately free for about {need:.0f} GB of downloads; continuing. If a download fails for lack of space, free some or use --models-dir.", flush=True)
 for repo in missing:
     print(f"  {repo}: downloading", flush=True); snapshot_download(repo, allow_patterns=patterns)
 PY
@@ -83,4 +86,4 @@ say "Self-test on the bundled controls (loads all models once; a few minutes)"
 printf '%s\n' "$PROFILE" > .profile
 ./detect --selftest --profile "$PROFILE"
 say "Remove models later with ./uninstall.sh"
-say "Done. Score a file with:   ./detect path/to/text.txt$( [[ "$PROFILE" == original ]] && echo " --older-models" || { [[ "$PROFILE" != olmo3 ]] && echo " --profile $PROFILE"; } )      (reports land in ./reports)"
+say "Done (profile ${PROFILE} is now the default for this checkout). Score a file with:   ./detect path/to/text.txt      (reports land in ./reports)"
