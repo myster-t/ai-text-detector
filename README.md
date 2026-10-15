@@ -33,7 +33,7 @@ No API keys, no uploads, nothing leaves your machine. The installer assumes noth
 git clone https://github.com/myster-t/ai-text-detector.git
 cd ai-text-detector
 ./install.sh                    # installs a Python runtime, the packages and ~36 GB of current models; ends with a self-test
-./detect essay.txt              # writes ~/Downloads/ai-text-report_<date>_<time>_essay.html
+./detect essay.txt              # writes ~/Downloads/261015-ai-report-1201-essay.html (date, then time)
 ./install.sh --older-models     # optional: the 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (~33 GB)
 ./detect essay.txt --older-models
 ```
@@ -47,8 +47,8 @@ is the original 2023 Falcon / Qwen2.5 set with the paper's thresholds; `--profil
 combination can be installed side by side.
 
 `./detect` takes any number of text files or Google Docs links and writes **one self-contained HTML file per run** into
-`~/Downloads` (or `./reports` if there is no Downloads folder), named `ai-text-report_<date>_<time>_<first text>.html`, so
-no run ever overwrites another and the date is in the name. The file opens with an overview of every text and its concern
+`~/Downloads` (or `./reports` if there is no Downloads folder), named `<yymmdd>-ai-report-<hhmm>-<first text>.html` (for example `261015-ai-report-1201-Gary.html`), so
+no run ever overwrites another and files sort by date. The file opens with an overview of every text and its concern
 level, a sticky navigation bar, and then one collapsible section per text (or per Google Docs tab) with the full report.
 `--out DIR` changes the folder; `--out path.html` sets the exact file. Also `--fast`, `--low-memory` and `--profile NAME`
 (see Memory).

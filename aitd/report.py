@@ -64,15 +64,16 @@ args.files = _files
 targets = [pathlib.Path(f).expanduser().resolve() for f in args.files]
 for p in targets: display.setdefault(p, p.name)
 # one dated, self-contained report file per run; never overwrites an earlier run
-_stamp = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+_stamp = _dt.datetime.now().strftime("%y%m%d-%H%M")   # 261015-1201
 _name = re.sub(r"[^A-Za-z0-9._-]+", "-", re.sub(r"\.txt$", "", display[targets[0]].split(" - tab ")[0]) if targets else "report").strip("-")[:40]
 if len(targets) > 1 and not all(" - tab " in display[t] for t in targets): _name += f"-and-{len(targets)-1}-more"
 if args.out and args.out.lower().endswith(".html"): out_file = pathlib.Path(args.out).expanduser()
 else:
     out_dir = pathlib.Path(args.out).expanduser() if args.out else (pathlib.Path.home() / "Downloads" if (pathlib.Path.home() / "Downloads").is_dir() else HERE / "reports")
-    out_file = out_dir / f"ai-text-report_{_stamp}_{_name}.html"
+    d8, hm = _stamp.split("-")
+    out_file = out_dir / f"{d8}-ai-report-{hm}-{_name}.html"
     k = 2
-    while out_file.exists(): out_file = out_dir / f"ai-text-report_{_stamp}_{_name}-{k}.html"; k += 1
+    while out_file.exists(): out_file = out_dir / f"{d8}-ai-report-{hm}-{_name}-{k}.html"; k += 1
 out_file.parent.mkdir(parents=True, exist_ok=True); out = out_file.parent
 for p in targets:
     if not p.is_file(): sys.exit(f"not a file: {p}")
@@ -539,9 +540,9 @@ hdr = f"<tr><th>File</th><th class=n>Words</th><th class=n>Binoculars</th><th>Ve
 idx_rows = "".join(f"<tr><td><a href='#{sid_of(n)}'>{esc(n)}</a></td><td class=n>{w}</td><td class='n {cls_b(b)}'>{b:.3f}</td><td>{esc(v)}</td><td class=n>{fd:.2f}</td>{''.join(f'<td class=n>{fmt(x)}</td>' for x in pp)}<td class=n>{fmt(sd)}</td><td class=n>{ss}</td><td>{esc(us)}{(' (' + str(uh + um) + ')') if us != 'clean' else ''}</td></tr>" for n, w, b, v, pp, sd, ss, sl, us, uh, um, fd in summary_rows)
 ctrl_rows = "".join(f"<tr><td class=mut>control ({'human' if is_human[c.resolve()] else 'machine'}): {esc(c.name)}</td><td class=n>{len(texts[c.resolve()].split())}</td><td class='n {cls_b(bino_res[c.resolve()][0])}'>{bino_res[c.resolve()][0]:.3f}</td><td></td><td class=n>{bino_res[c.resolve()][2]:.2f}</td>{''.join(f'<td class=n>{fmt(lm[(c.resolve(), l)][chr(112)+chr(112)+chr(108)])}</td>' for l in PPL_LABELS)}<td class=n>{fmt(sent_ppl[c.resolve()]['sd'])}</td><td class=n>{style_res[c.resolve()].get('score')}</td><td>{esc(uni_res[c.resolve()]['status'])}</td></tr>" for c in CONTROLS)
 sep_rows = "".join(f"<tr><td>{esc(grp)}</td><td>{esc(title)}</td><td class=n>{separation(k):.2f}</td><td>{'higher' if hih else ('lower' if hih is False else 'no claim')}</td></tr>" for grp, k, title, hih, _, _, _ in sorted(MEAS, key=lambda m: -(separation(m[1]) if separation(m[1]) == separation(m[1]) else 0)))
-out_file.write_text(f"""<!DOCTYPE html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>AI text report {esc(_stamp)} {esc(_name)}</title><style>{CSS}</style></head><body>
+out_file.write_text(f"""<!DOCTYPE html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>{esc(_stamp[:6])} AI report {esc(_name)}</title><style>{CSS}</style></head><body>
 <nav class=top><a href="#overview"><b>Overview</b></a>{nav}</nav><main>
-<section id="overview"><h1>AI text report</h1><p class=by>{len(targets)} {'texts' if len(targets) != 1 else 'text'} · run {esc(_stamp.replace('_', ' '))} · profile <b>{esc(args.profile)}</b>{'' if CAL else ' (uncalibrated: no thresholds, no verdicts)'} · {esc(model_line)} · all local · this file is self-contained</p>
+<section id="overview"><h1>AI text report</h1><p class=by>{len(targets)} {'texts' if len(targets) != 1 else 'text'} · run {esc(now)} {esc(_stamp[-4:-2])}:{esc(_stamp[-2:])} · profile <b>{esc(args.profile)}</b>{'' if CAL else ' (uncalibrated: no thresholds, no verdicts)'} · {esc(model_line)} · all local · this file is self-contained</p>
 <ul>{tmarks}</ul>{legend}{idx_strip}
 <div class=wrap><table>{hdr}{idx_rows}</table></div>
 <details class=sec><summary><h3>The {len(CONTROLS)} controls on the same measures (click to show)</h3></summary><div class=wrap><table>{hdr}{ctrl_rows}</table></div></details>
