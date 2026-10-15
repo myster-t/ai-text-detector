@@ -23,7 +23,13 @@ else
   curl -fsSL "https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz" -o "$tmp/src.tgz" || fail "download failed (no network?)"
   tar -xzf "$tmp/src.tgz" -C "$tmp" || fail "could not unpack the download"
   src="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
-  [[ -f "$src/aitd/report.py" && -f "$src/install.sh" ]] || fail "unexpected archive layout"
+  [[ -f "$src/install.sh" && ( -f "$src/aitd/report.py" || -f "$src/report.py" ) ]] || fail "unexpected archive layout"
+  # self-update first: let the NEW updater apply the new layout, so an old updater never judges a new archive
+  if [[ -f "$src/update.sh" && "${AITD_STAGE2:-0}" != 1 ]] && ! cmp -s "$src/update.sh" "$ROOT/update.sh"; then
+    say "Updater changed upstream; switching to the new one"
+    cp -f "$src/update.sh" "$ROOT/update.sh"; chmod +x "$ROOT/update.sh"
+    AITD_STAGE2=1 exec "$ROOT/update.sh" "$@"
+  fi
   say "Updating files (models, .venv, .models-dir, .profile, reports and your own controls are left alone)"
   # copy everything from the archive over this folder; nothing of yours is deleted
   ( cd "$src" && tar -cf - . ) | tar -xf - -C "$ROOT"
