@@ -4,7 +4,7 @@ This is editorial evidence about how the text reads, not proof of authorship.
 Usage: python style.py file.txt [file2 ...]   -> JSON  (score 0-100, label, issues[], stats)"""
 import sys, json, pathlib
 from py_mini_racer import MiniRacer
-HERE = pathlib.Path(__file__).resolve().parent
+HERE = pathlib.Path(__file__).resolve().parent.parent   # repo root (this file lives in aitd/)
 _SRC = (HERE / "third_party" / "avoid-ai-writing" / "patterns.js").read_text()
 _ctx = None
 def _engine():

@@ -6,4 +6,4 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -x "$ROOT/.venv/bin/python" ]] || { echo "Not installed yet. Run ./install.sh first." >&2; exit 1; }
 MODELS_DIR="${AITD_MODELS_DIR:-}"; [[ -z "$MODELS_DIR" && -f "$ROOT/.models-dir" ]] && MODELS_DIR="$(cat "$ROOT/.models-dir")"; MODELS_DIR="${MODELS_DIR:-$ROOT/models}"
 export HF_HOME="$MODELS_DIR" HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
-exec "$ROOT/.venv/bin/python" "$ROOT/report.py" "$@"
+exec "$ROOT/.venv/bin/python" "$ROOT/aitd/report.py" "$@"

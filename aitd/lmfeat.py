@@ -4,7 +4,7 @@ GLTR (Gehrmann et al. 2019: share of tokens in the model's top-10/100/1000), Det
 (Su et al. 2023), mean log-rank, mean entropy, and perplexity. Used by report.py; also runnable on its own:
 python lmfeat.py MODEL file.txt [...] -> JSON"""
 import os, sys, math, json, pathlib
-HERE = pathlib.Path(__file__).resolve().parent
+HERE = pathlib.Path(__file__).resolve().parent.parent   # repo root (this file lives in aitd/)
 _md = os.environ.get("AITD_MODELS_DIR") or ((HERE / ".models-dir").read_text().strip() if (HERE / ".models-dir").is_file() else "") or str(HERE / "models")
 if pathlib.Path(_md).is_dir(): os.environ.setdefault("HF_HOME", _md)
 os.environ.setdefault("HF_HUB_OFFLINE", "1"); os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")

@@ -2,7 +2,7 @@
 Score = PPL_performer(text) / cross-PPL(observer -> performer). LOWER = more likely AI.
 Reference thresholds: 0.9015 (accuracy-optimal), 0.8536 (low false-positive).  Usage: python binoculars.py file1 file2 ..."""
 import os, sys, json, pathlib
-HERE = pathlib.Path(__file__).resolve().parent
+HERE = pathlib.Path(__file__).resolve().parent.parent   # repo root (this file lives in aitd/)
 _md = os.environ.get("AITD_MODELS_DIR") or ((HERE / ".models-dir").read_text().strip() if (HERE / ".models-dir").is_file() else "") or str(HERE / "models")
 if pathlib.Path(_md).is_dir(): os.environ.setdefault("HF_HOME", _md)
 os.environ.setdefault('HF_HUB_OFFLINE', '1'); os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')

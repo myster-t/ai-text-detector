@@ -23,12 +23,16 @@ else
   curl -fsSL "https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz" -o "$tmp/src.tgz" || fail "download failed (no network?)"
   tar -xzf "$tmp/src.tgz" -C "$tmp" || fail "could not unpack the download"
   src="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -1)"
-  [[ -f "$src/report.py" && -f "$src/install.sh" ]] || fail "unexpected archive layout"
+  [[ -f "$src/aitd/report.py" && -f "$src/install.sh" ]] || fail "unexpected archive layout"
   say "Updating files (models, .venv, .models-dir, .profile, reports and your own controls are left alone)"
   # copy everything from the archive over this folder; nothing of yours is deleted
   ( cd "$src" && tar -cf - . ) | tar -xf - -C "$ROOT"
   [[ -n "$latest" ]] && printf '%s\n' "$latest" > .version
-  chmod +x detect install.sh uninstall.sh update.sh update-style-rules.sh 2>/dev/null || true
+  # files that older versions kept at the root and that now live in aitd/ or scripts/
+  for legacy in report.py binoculars.py perplexity.py style.py unicode_check.py features.py lmfeat.py charts.py slop.py classifier.py update-style-rules.sh; do
+    [[ -f "$ROOT/$legacy" && -f "$ROOT/aitd/${legacy%.sh}.py" || -f "$ROOT/scripts/$legacy" ]] && rm -f "$ROOT/$legacy"
+  done
+  chmod +x detect install.sh uninstall.sh update.sh scripts/update-style-rules.sh 2>/dev/null || true
 fi
 
 say "Checking packages and models for the installed profile"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Refresh the vendored avoid-ai-writing detector (MIT, Conor Bronsdon) to the current upstream main.
-set -euo pipefail; cd "$(dirname "${BASH_SOURCE[0]}")"
+set -euo pipefail; cd "$(dirname "${BASH_SOURCE[0]}")/.."   # repo root
 D=third_party/avoid-ai-writing; B=https://raw.githubusercontent.com/conorbronsdon/avoid-ai-writing/main
 SHA=$(curl -s https://api.github.com/repos/conorbronsdon/avoid-ai-writing/commits/main | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
 VER=$(curl -sL $B/package.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))")

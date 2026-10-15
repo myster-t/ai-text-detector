@@ -7,7 +7,7 @@
 Rates are per 1,000 words; matches carry positions so the report can mark them. These describe vocabulary habits of
 2025-era models; they are editorial evidence, not proof of authorship. Usage: python slop.py file.txt [...] -> JSON"""
 import sys, json, re, pathlib
-HERE = pathlib.Path(__file__).resolve().parent
+HERE = pathlib.Path(__file__).resolve().parent.parent   # repo root (this file lives in aitd/)
 _A = HERE / "third_party" / "antislop"; _F = HERE / "third_party" / "slop-forensics"
 def _load():
     aw = {w for w, _ in json.loads((_A / "slop_words_2025-04-07.json").read_text())}

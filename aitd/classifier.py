@@ -4,7 +4,7 @@ the zero-width / homoglyph attacks the model card reports. Supervised detectors 
 collapse on generators and registers they were not trained on, so this is one vote among many, never a verdict.
 Usage: python classifier.py file.txt [...] -> JSON"""
 import os, sys, json, pathlib, unicodedata
-HERE = pathlib.Path(__file__).resolve().parent
+HERE = pathlib.Path(__file__).resolve().parent.parent   # repo root (this file lives in aitd/)
 _md = os.environ.get("AITD_MODELS_DIR") or ((HERE / ".models-dir").read_text().strip() if (HERE / ".models-dir").is_file() else "") or str(HERE / "models")
 if pathlib.Path(_md).is_dir(): os.environ.setdefault("HF_HOME", _md)
 os.environ.setdefault("HF_HUB_OFFLINE", "1"); os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")

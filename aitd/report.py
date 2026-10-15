@@ -3,18 +3,19 @@ writing-pattern (AI-ism) and hidden-character checks; one HTML report per file p
 Usage:  ./detect file1.txt [file2 ...] [--out DIR] [--older-models | --profile NAME] [--selftest]
 Models are loaded for the run and released when it exits; nothing stays resident."""
 import os, sys, re, math, json, html, argparse, datetime, pathlib
-HERE = pathlib.Path(__file__).resolve().parent
+HERE = pathlib.Path(__file__).resolve().parent.parent   # repo root (this file lives in aitd/)
 _md = os.environ.get("AITD_MODELS_DIR") or ((HERE / ".models-dir").read_text().strip() if (HERE / ".models-dir").is_file() else "") or str(HERE / "models")
 if pathlib.Path(_md).is_dir(): os.environ.setdefault("HF_HOME", _md)
 os.environ.setdefault("HF_HUB_OFFLINE", "1"); os.environ.setdefault("TRANSFORMERS_OFFLINE", "1"); os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 import torch, torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
-sys.path.insert(0, str(HERE)); import style as style_mod, unicode_check, features, lmfeat, charts, slop, classifier
+sys.path.insert(0, str(HERE / "aitd")); import style as style_mod, unicode_check, features, lmfeat, charts, slop, classifier
 from charts import esc
 
 PROFILES = json.loads((HERE / "profiles.json").read_text())
 ap = argparse.ArgumentParser(description="Score text files for machine generation and write HTML reports.")
-ap.add_argument("files", nargs="*", help="UTF-8 text files to score")
+ap.add_argument("files", nargs="*", help="UTF-8 text files to score, or Google Docs links (shared as 'Anyone with the link'); each tab becomes one report")
+ap.add_argument("--tabs", default=None, help="comma-separated Google Docs tab ids (the tab= value in the browser URL, e.g. t.0,t.3k2x9) when they cannot be discovered")
 ap.add_argument("--out", default="reports", help="output folder (default: ./reports)")
 ap.add_argument("--profile", default=None, choices=sorted(PROFILES), help="model set by name (default: olmo3)")
 ap.add_argument("--older-models", action="store_true", help="use the original 2023 Falcon-7B / Qwen2.5 set with the Binoculars paper's thresholds (same as --profile original)")
@@ -46,6 +47,17 @@ ANCHOR_H, ANCHOR_A = HERE / "controls" / "human" / "stewart-letter-1913.txt", HE
 if args.selftest: args.files = [str(ANCHOR_H), str(ANCHOR_A)]; args.out = str(HERE / "reports" / f"selftest-{args.profile}")
 if not args.files: ap.error("give at least one text file, or --selftest")
 out = pathlib.Path(args.out).expanduser(); out.mkdir(parents=True, exist_ok=True)
+# Google Docs links: fetch each tab as plain text into the output folder and score those files
+import gdoc
+_files = []
+for f in args.files:
+    if re.match(r"https?://docs\.google\.com/", f):
+        try: parts = gdoc.fetch(f, args.tabs)
+        except Exception as e: sys.exit(f"Google Doc {f}: {e}")
+        for label, text in parts:
+            p = out / (gdoc.safe_name(label) + ".txt"); p.write_text(text + "\n"); _files.append(str(p)); log(f"[gdoc] {label}: {len(text.split())} words -> {p.name}")
+    else: _files.append(f)
+args.files = _files
 targets = [pathlib.Path(f).expanduser().resolve() for f in args.files]
 for p in targets:
     if not p.is_file(): sys.exit(f"not a file: {p}")

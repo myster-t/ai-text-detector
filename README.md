@@ -48,6 +48,19 @@ combination can be installed side by side.
 
 `./detect` takes any number of text files and an optional `--out DIR`, plus `--fast`, `--low-memory` and `--profile NAME` (see Memory).
 
+**Google Docs.** Pass a document link instead of a file and every tab becomes its own report:
+
+```sh
+./detect "https://docs.google.com/document/d/<id>/edit?tab=t.0"          # all tabs it can find; this tab if only one
+./detect "https://docs.google.com/document/d/<id>/edit" --tabs t.0,t.k8x2   # name the tabs (the tab= value in the browser URL)
+```
+
+This uses Google's plain-text export, which needs no account or API key but requires the document to be shared as
+"Anyone with the link" (Share > General access); a private document yields a clear message saying so. The fetched text of
+each tab is saved next to its report, so what was scored is on record. Without a Google account the tool cannot list a
+document's tabs itself, so it uses the ids you pass, the id in the link, or the ids it can find in the HTML export, and
+otherwise scores the whole document as one text.
+
 To update later, run `./update.sh` inside the folder: it downloads the latest files from GitHub and copies them over this
 folder (no git needed; a git clone is pulled instead), keeps your models, Python environment, settings, reports and any
 control texts you added, then re-runs the installer, which only fetches what is newly required. `./update.sh --no-selftest`
@@ -197,25 +210,38 @@ any other pair; the installer, runner and uninstaller all read the same file, so
 
 Reports are self-contained HTML (no scripts, fonts or external assets), print to A4, and render in light and dark mode.
 
+## Layout
+
+```
+detect, install.sh, update.sh, uninstall.sh   the four commands
+profiles.json, requirements.txt               model sets and Python packages
+aitd/                                         the code (report.py is the entry point; each check is also a standalone script)
+controls/                                     the 67 control texts, their manifest, and the cached scores per profile
+third_party/                                  vendored rule and vocabulary lists with their licences
+examples/                                     two rendered reports
+scripts/                                      maintenance scripts (refresh the vendored style rules)
+models/, .venv/, reports/                     created by the installer and by runs; not part of the repo
+```
+
 ## Building blocks
 
 Each check can run on its own and prints JSON:
 
 ```sh
-.venv/bin/python binoculars.py draft.txt
-.venv/bin/python perplexity.py Qwen/Qwen2.5-1.5B draft.txt
-.venv/bin/python lmfeat.py Qwen/Qwen2.5-1.5B draft.txt     # GLTR buckets, log-rank, LRR, entropy
-.venv/bin/python features.py draft.txt                      # stylometry, no model
-.venv/bin/python style.py draft.txt
-.venv/bin/python unicode_check.py draft.txt
+.venv/bin/python aitd/binoculars.py draft.txt
+.venv/bin/python aitd/perplexity.py Qwen/Qwen2.5-1.5B draft.txt
+.venv/bin/python aitd/lmfeat.py Qwen/Qwen2.5-1.5B draft.txt     # GLTR buckets, log-rank, LRR, entropy
+.venv/bin/python aitd/features.py draft.txt                      # stylometry, no model
+.venv/bin/python aitd/style.py draft.txt
+.venv/bin/python aitd/unicode_check.py draft.txt
 ```
 
 ```sh
-.venv/bin/python slop.py draft.txt                          # slop vocabulary rates and matches
-.venv/bin/python classifier.py draft.txt                    # supervised classifier P(AI)
+.venv/bin/python aitd/slop.py draft.txt                          # slop vocabulary rates and matches
+.venv/bin/python aitd/classifier.py draft.txt                    # supervised classifier P(AI)
 ```
 
-`charts.py` holds the SVG builders (violins, strips, position bars, token heat map) and has no dependencies.
+`aitd/charts.py` holds the SVG builders (violins, strips, position bars, token heat map) and has no dependencies.
 
 The scripts find the models in `./models` and run offline by default; no environment variables are needed.
 
@@ -226,7 +252,7 @@ The scripts find the models in `./models` and run offline by default; no environ
 another's predictions, which normalises away prompts and topics that make text predictable for reasons other than being
 machine-written. Texts that a model finds much more predictable than this baseline score low. This repo uses the paper's
 reference pairing, `tiiuae/falcon-7b` as observer and `tiiuae/falcon-7b-instruct` as performer, and its published thresholds.
-`binoculars.py` is about 40 lines and follows Section 3 of the paper.
+`aitd/binoculars.py` is about 40 lines and follows Section 3 of the paper.
 
 **Fast-DetectGPT** asks whether the text sits at a local maximum of the model's probability: machine text, being sampled
 from a model, is more probable than the alternatives the model would itself have produced at each position; human text is
@@ -242,13 +268,13 @@ DetectLLM's log-likelihood/log-rank ratio (Su et al., 2023) divides mean negativ
 text scores higher. Mean entropy says how open the model's prediction was at each step; generators mostly follow the model in
 low-entropy contexts, so human text averages higher.
 
-**Stylometry** (`features.py`) needs no model: moving-average type-token ratio (Covington and McFall, 2010), MTLD (McCarthy
+**Stylometry** (`aitd/features.py`) needs no model: moving-average type-token ratio (Covington and McFall, 2010), MTLD (McCarthy
 and Jarvis, 2010), hapax ratio, sentence- and paragraph-length coefficient of variation, word length, and per-thousand-word
 rates of em dashes, semicolons, colons, questions, exclamations, contractions, first-person pronouns, "not X, but Y"
 constructions and three-item lists. These describe register and rhythm; they shift with genre and separate the controls
 only partly, which the report shows honestly through each panel's AUC.
 
-**Slop vocabulary** (`slop.py`) counts hits against lists that were built by measuring which words and phrases LLMs use far
+**Slop vocabulary** (`aitd/slop.py`) counts hits against lists that were built by measuring which words and phrases LLMs use far
 more often than people do: slop-forensics (Paech, 2025, MIT; essays from ten 2025 models including GPT-4.1-nano, GPT-4o-mini,
 gpt-oss-20b, Gemini 2.5 Flash-Lite, Gemma 3, Llama 4 Scout, Mistral Nemo, Qwen3-30B, Grok 4 Fast and GLM-4.6, versus
 human writing) for single words, bigrams and trigrams, and antislop-sampler (Paech, 2025, Apache 2.0) for 2,500 phrases and
@@ -267,7 +293,7 @@ and the combined score weights it accordingly; a hit on a 2023 word is editorial
 Population-level markers (Kobak, the em-dash studies) are stated by their authors not to be per-document detectors, and the
 report treats the lexical layer the same way.
 
-**Supervised classifier** (`classifier.py`): `tabularisai/ai-text-detection`, a ModernBERT-base model (149M parameters,
+**Supervised classifier** (`aitd/classifier.py`): `tabularisai/ai-text-detection`, a ModernBERT-base model (149M parameters,
 MIT) fine-tuned in 2026 on about 11 million rows dominated by the 2024 RAID benchmark. Its own card reports AUROC 0.99 on
 RAID; independent tests of RAID-trained encoders show they collapse on 2025-26 generators (true-positive rate 0.13 at 1%
 false positives on Qwen3 text in one study), and here it misses one of the Claude controls outright. Text is NFKC-normalised
@@ -295,7 +321,7 @@ GPTZero. This repo computes document perplexity, mean sentence perplexity and th
 by Conor Bronsdon (MIT), vendored unmodified in `third_party/avoid-ai-writing/` and run in-process on the V8 engine that
 ships with the `mini-racer` Python package. It applies several dozen deterministic rules: tiered vocabulary lists, transition
 and template phrases, chatbot artifacts, generic conclusions, hedge stacking, formatting and rhythm signals. Refresh it with
-`./update-style-rules.sh`.
+`./scripts/update-style-rules.sh`.
 
 **Hidden characters** are found with the Unicode character database that ships with Python: zero-width and format
 characters, non-standard spaces, bidirectional controls, variation selectors, tag characters and private-use code points,
