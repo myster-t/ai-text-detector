@@ -109,6 +109,7 @@ The rendered reports for both controls are in [`examples/`](examples/).
 | --- | --- | --- | --- |
 | `latest` (default) | Qwen/Qwen3.5-9B-Base, Qwen3.5-9B | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; reports give no verdict |
 | `original` (`--older-models`) | tiiuae/falcon-7b, falcon-7b-instruct | Qwen2.5-1.5B, GPT-2 | the paper's; reports state a verdict |
+| `falcon3` | tiiuae/Falcon3-7B-Base, Falcon3-7B-Instruct | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | none; bake-off candidate, measured worse than both (see below) |
 | `dev` | Qwen3.5-2B-Base, Qwen3.5-0.8B-Base | GPT-2 | none; small models for working on the report itself, not a detector |
 
 Binoculars' published thresholds were derived for the Falcon pair and mean nothing for any other, so the default profile
@@ -225,16 +226,19 @@ which the reports show side by side.
 
 ### Measured: original vs latest on the 67 controls (October 2026, Apple M5 Max)
 
-| | `original` (Falcon-7B pair, 2023) | `latest` (Qwen3.5-9B pair, 2026) |
-| --- | --- | --- |
-| Binoculars AUC on the 67 controls | 0.80 | 0.62 |
-| Fast-DetectGPT AUC | 0.79 | 0.60 |
-| Best single-model statistic (AUC) | entropy 0.91 | surprisal spread 0.96 |
+| | `original` (Falcon-7B pair, 2023) | `latest` (Qwen3.5-9B pair, 2026) | `falcon3` (Falcon3-7B pair, 2024) |
+| --- | --- | --- | --- |
+| Binoculars AUC on the 67 controls | 0.80 | 0.62 | 0.60 |
+| Fast-DetectGPT AUC | 0.79 | 0.60 | 0.58 |
+| Alignment imprint AUC | 0.79 | 0.59 | 0.80 |
+| Best single-model statistic (AUC) | entropy 0.91 (Qwen2.5-1.5B) | surprisal spread 0.96 (Qwen3.5-2B-Base) | same small models as `latest` |
 
-Newer is not better for the pair-based scores: the 2026 pair leaves almost no room between the groups. It is better for the
-single-model statistics, which are the strongest measures under either profile. The pair choice is a known lever (see the
-next section), and candidate pairs can be tried by adding a profile; the Falcon3-7B pair is included as `falcon3` for that
-purpose.
+Newer is not better for the pair-based scores: both 2024-2026 pairs leave almost no room between the groups, and the
+Falcon3 pair (same family as the paper's pair, one generation on) does no better than Qwen3.5. Newer *is* better for the
+single-model statistics, which are the strongest measures under every profile. If you want the best pair-based scores and
+the best single-model statistics in one run, a hybrid profile is one line in `profiles.json`: the original Falcon-7B pair as
+observer/performer with the Qwen3.5 small models for the token statistics (both model sets must be installed). Remove the
+bake-off models with `./uninstall.sh --profile falcon3`.
 
 Even so, `latest` is the default since October 2026: the original pair's advantage is its calibrated verdict line, and
 that line is only meaningful for 2023-era generators; for current text the report's value is the control comparison on
