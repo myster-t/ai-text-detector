@@ -20,6 +20,7 @@ if [[ -n "$MODELS_DIR" ]]; then mkdir -p "$MODELS_DIR"; MODELS_DIR="$(cd "$MODEL
 elif [[ -n "${AITD_MODELS_DIR:-}" ]]; then MODELS_DIR="$AITD_MODELS_DIR"
 elif [[ -f .models-dir ]]; then MODELS_DIR="$(cat .models-dir)"
 else MODELS_DIR="$ROOT/models"; fi
+mkdir -p "$MODELS_DIR" || { printf 'error: cannot create models directory %s\n' "$MODELS_DIR" >&2; exit 1; }
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 fail() { printf '\n\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
